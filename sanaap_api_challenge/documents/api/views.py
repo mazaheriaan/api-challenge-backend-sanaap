@@ -35,6 +35,7 @@ from .serializers import DocumentCreateSerializer
 from .serializers import DocumentDetailSerializer
 from .serializers import DocumentListSerializer
 from .serializers import ShareSerializer
+from .utils import get_client_ip
 
 
 def log_document_access(
@@ -46,17 +47,11 @@ def log_document_access(
     success=True,
     error_message="",
 ):
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
-        ip_address = x_forwarded_for.split(",")[0]
-    else:
-        ip_address = request.META.get("REMOTE_ADDR")
-
     Access.objects.create(
         document=document,
         user=user,
         action=action,
-        ip_address=ip_address,
+        ip_address=get_client_ip(request),
         user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
         additional_info=additional_info or {},
         success=success,

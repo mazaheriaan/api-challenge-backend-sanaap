@@ -14,6 +14,10 @@ from sanaap_api_challenge.documents.models import Share
 from sanaap_api_challenge.documents.utils.validators import validate_uploaded_file
 from sanaap_api_challenge.utils.minio_client import minio_client
 
+from .utils import calculate_file_hash
+from .utils import generate_unique_filename
+from .utils import get_client_ip
+
 User = get_user_model()
 
 
@@ -183,11 +187,15 @@ class DocumentListSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_file_size_display(self, obj):
-        return obj.get_human_readable_size()
+        from .utils import get_human_readable_size
+
+        return get_human_readable_size(obj.file_size)
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_file_extension(self, obj):
-        return obj.get_file_extension()
+        from .utils import get_file_extension
+
+        return get_file_extension(obj.file_name)
 
     @extend_schema_field(OpenApiTypes.INT)
     def get_share_count(self, obj):
@@ -260,17 +268,23 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_file_size_display(self, obj):
-        return obj.get_human_readable_size()
+        from .utils import get_human_readable_size
+
+        return get_human_readable_size(obj.file_size)
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_file_extension(self, obj):
-        return obj.get_file_extension()
+        from .utils import get_file_extension
+
+        return get_file_extension(obj.file_name)
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_download_url(self, obj):
         request = self.context.get("request")
         if request:
-            return request.build_absolute_uri(f"/api/documents/{obj.id}/download/")
+            return request.build_absolute_uri(
+                f"/api/documents/items/{obj.id}/download/"
+            )
         return None
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -342,7 +356,7 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
             file_content = file.read()
             file.seek(0)
 
-            file_hash = Document.calculate_file_hash(file_content)
+            file_hash = calculate_file_hash(file_content)
 
             existing = Document.objects.filter(file_hash=file_hash).first()
             if existing:
@@ -351,7 +365,16 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
                     % {"title": existing.title},
                 )
 
-            file_path = Document.generate_file_path(file.name, request.user.id)
+            # Generate unique file path for MinIO storage
+            from datetime import datetime
+
+            now = datetime.now()
+            unique_filename = generate_unique_filename(
+                file.name,
+                request.user.id,
+                prefix="doc",
+            )
+            file_path = f"documents/{now.year}/{now.month:02d}/{now.day:02d}/{request.user.id}/{unique_filename}"
 
             file_obj = BytesIO(file_content)
             success = minio_client.upload_file(
@@ -382,7 +405,7 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
                 document=document,
                 user=request.user,
                 action="upload",
-                ip_address=self.get_client_ip(request),
+                ip_address=get_client_ip(request),
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
                 success=True,
             )
@@ -399,7 +422,7 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
                     document=None,
                     user=request.user,
                     action="upload",
-                    ip_address=self.get_client_ip(request),
+                    ip_address=get_client_ip(request),
                     user_agent=request.META.get("HTTP_USER_AGENT", ""),
                     success=False,
                     error_message=str(e),
@@ -411,14 +434,6 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
             raise ValidationError(
                 _("Failed to create document: %(error)s") % {"error": str(e)},
             )
-
-    def get_client_ip(self, request):
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(",")[0]
-        else:
-            ip = request.META.get("REMOTE_ADDR")
-        return ip
 
 
 class BulkShareSerializer(serializers.Serializer):

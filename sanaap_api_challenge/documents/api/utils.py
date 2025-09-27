@@ -98,6 +98,14 @@ def generate_unique_filename(
     return filename
 
 
+def get_client_ip(request) -> str:
+    """Extract client IP address from request."""
+    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
 def parse_file_size_query(size_str: str) -> int | None:
     if not size_str:
         return None

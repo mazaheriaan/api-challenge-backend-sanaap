@@ -1,6 +1,3 @@
-import hashlib
-import uuid
-
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.urls import reverse
@@ -13,6 +10,9 @@ from model_utils.fields import MonitorField
 from model_utils.fields import StatusField
 from model_utils.models import StatusModel
 from model_utils.models import TimeStampedModel
+
+from .api.utils import get_file_extension
+from .api.utils import get_human_readable_size
 
 User = get_user_model()
 
@@ -107,36 +107,16 @@ class Document(TimeStampedModel, StatusModel):
         return reverse("api:document-detail", kwargs={"pk": self.pk})
 
     def get_file_extension(self):
-        return self.file_name.split(".")[-1].lower() if "." in self.file_name else ""
+        return get_file_extension(self.file_name)
 
     def get_human_readable_size(self):
-        size = self.file_size
-        size_limit = 1024.0
-        for unit in ["B", "KB", "MB", "GB"]:
-            if size < size_limit:
-                return f"{size:.1f} {unit}"
-            size /= size_limit
-        return f"{size:.1f} TB"
+        return get_human_readable_size(self.file_size)
 
     def increment_download_count(self):
         self.download_count = models.F("download_count") + 1
         self.last_accessed = timezone.now()
         self.save(update_fields=["download_count", "last_accessed"])
 
-    @staticmethod
-    def calculate_file_hash(file_content):
-        return hashlib.sha256(file_content).hexdigest()
-
-    @staticmethod
-    def generate_file_path(original_filename, owner_id):
-        """Generate a unique file path for MinIO storage."""
-        now = timezone.now()
-        unique_id = uuid.uuid4().hex
-        filename = f"{unique_id}_{original_filename}"
-
-        return (
-            f"documents/{now.year}/{now.month:02d}/{now.day:02d}/{owner_id}/{filename}"
-        )
 
 
 class Share(TimeStampedModel):
