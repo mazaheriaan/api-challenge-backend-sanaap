@@ -1,0 +1,11 @@
+.editorconfig
+.gitattributes
+.github
+.gitignore
+.idea
+.pre-commit-config.yaml
+venv
+.venv
+.git
+.envs/
+.devcontainer/

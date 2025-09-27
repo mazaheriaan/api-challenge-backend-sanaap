@@ -1,0 +1,75 @@
+volumes:
+  production_postgres_data: {}
+  production_postgres_data_backups: {}
+  production_traefik: {}
+  production_django_media: {}
+  production_redis_data: {}
+  production_minio_data: {}
+  
+
+
+services:
+  django: &django
+    build:
+      context: .
+      dockerfile: ./compose/production/django/Dockerfile
+
+    image: sanaap_api_challenge_production_django
+    volumes:
+      - production_django_media:/app/sanaap_api_challenge/media
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    env_file:
+      - ./.envs/.production/.django
+      - ./.envs/.production/.postgres
+    command: /start
+
+  postgres:
+    build:
+      context: .
+      dockerfile: ./compose/production/postgres/Dockerfile
+    image: sanaap_api_challenge_production_postgres
+    volumes:
+      - production_postgres_data:/var/lib/postgresql/data
+      - production_postgres_data_backups:/backups
+    env_file:
+      - ./.envs/.production/.postgres
+  redis:
+    image: docker.io/redis:6
+    
+    volumes:
+      - production_redis_data:/data
+    
+
+  celeryworker:
+    <<: *django
+    image: sanaap_api_challenge_production_celeryworker
+    command: /start-celeryworker
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./compose/production/nginx/Dockerfile
+    image: sanaap_api_challenge_production_nginx
+    depends_on:
+      - django
+    volumes:
+      - production_django_media:/usr/share/nginx/media:ro
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # MinIO API
+      - "9001:9001"  # MinIO Console
+    env_file:
+      - ./.envs/.production/.minio
+    volumes:
+      - production_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3

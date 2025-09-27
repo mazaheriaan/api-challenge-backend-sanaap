@@ -1,0 +1,4 @@
+# MinIO Configuration - Production
+# ------------------------------------------------------------------------------
+MINIO_ROOT_USER=admin_prod
+MINIO_ROOT_PASSWORD=SecureProductionPassword123!

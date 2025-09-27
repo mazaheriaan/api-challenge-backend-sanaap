@@ -1,0 +1,4 @@
+# MinIO Configuration - Local Development
+# ------------------------------------------------------------------------------
+MINIO_ROOT_USER=admin
+MINIO_ROOT_PASSWORD=password123
