@@ -34,26 +34,6 @@ def get_file_extension(filename: str) -> str:
     return filename.rsplit(".", 1)[1].lower()
 
 
-def validate_file_type(filename: str, allowed_types: list = None) -> bool:
-    if not allowed_types:
-        allowed_types = [
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "text/plain",
-            "text/csv",
-            "image/jpeg",
-            "image/png",
-            "image/gif",
-            "image/webp",
-        ]
-
-    content_type = get_file_content_type(filename)
-    return content_type in allowed_types
-
-
 def sanitize_filename(filename: str) -> str:
     import re
 
@@ -99,80 +79,7 @@ def generate_unique_filename(
 
 
 def get_client_ip(request) -> str:
-    """Extract client IP address from request."""
     x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
     if x_forwarded_for:
         return x_forwarded_for.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR", "")
-
-
-def parse_file_size_query(size_str: str) -> int | None:
-    if not size_str:
-        return None
-
-    import re
-
-    match = re.match(r"^(\d+(?:\.\d+)?)\s*([KMGT]?B)$", size_str.upper().strip())
-    if not match:
-        return None
-
-    number, unit = match.groups()
-    number = float(number)
-
-    multipliers = {
-        "B": 1,
-        "KB": 1024,
-        "MB": 1024**2,
-        "GB": 1024**3,
-        "TB": 1024**4,
-    }
-
-    return int(number * multipliers.get(unit, 1))
-
-
-def get_mime_type_display_name(content_type: str) -> str:
-    type_mapping = {
-        "application/pdf": "PDF Document",
-        "application/msword": "Word Document",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word Document",
-        "application/vnd.ms-excel": "Excel Spreadsheet",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel Spreadsheet",
-        "text/plain": "Text File",
-        "text/csv": "CSV File",
-        "image/jpeg": "JPEG Image",
-        "image/png": "PNG Image",
-        "image/gif": "GIF Image",
-        "image/webp": "WebP Image",
-        "application/zip": "ZIP Archive",
-        "application/x-rar-compressed": "RAR Archive",
-    }
-
-    return type_mapping.get(content_type, content_type.split("/")[-1].upper() + " File")
-
-
-def check_user_document_quota(
-    user: User,
-    max_documents: int = 1000,
-) -> tuple[bool, int]:
-    from sanaap_api_challenge.documents.models import Document
-
-    current_count = Document.objects.filter(owner=user, is_active=True).count()
-    return current_count < max_documents, current_count
-
-
-def check_user_storage_quota(
-    user: User,
-    max_storage_bytes: int = 10 * 1024**3,
-) -> tuple[bool, int]:
-    from django.db.models import Sum
-
-    from sanaap_api_challenge.documents.models import Document
-
-    current_usage = (
-        Document.objects.filter(owner=user, is_active=True).aggregate(
-            total_size=Sum("file_size"),
-        )["total_size"]
-        or 0
-    )
-
-    return current_usage < max_storage_bytes, current_usage
