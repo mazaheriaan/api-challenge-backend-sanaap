@@ -100,6 +100,8 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # Document middleware
+    "sanaap_api_challenge.documents.middleware.RequestLoggingMiddleware",
 ]
 
 # STATIC
