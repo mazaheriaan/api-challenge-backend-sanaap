@@ -53,7 +53,7 @@ THIRD_PARTY_APPS = [
     "guardian",
 ]
 
-LOCAL_APPS = ["sanaap_api_challenge"]
+LOCAL_APPS = ["sanaap_api_challenge.documents"]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
