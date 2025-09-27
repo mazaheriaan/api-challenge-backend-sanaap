@@ -288,3 +288,95 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": "/api/",
     "COMPONENT_SPLIT_REQUEST": True,
 }
+
+# Document Upload Settings
+# ------------------------------------------------------------------------------
+# Maximum file size for uploads (100MB)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024  # 100MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024  # 100MB
+
+# Maximum number of files that can be uploaded at once
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
+
+# File upload handlers
+FILE_UPLOAD_HANDLERS = [
+    "django.core.files.uploadhandler.MemoryFileUploadHandler",
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",
+]
+
+# Temporary file upload directory
+FILE_UPLOAD_TEMP_DIR = env("FILE_UPLOAD_TEMP_DIR", default=None)
+
+# Allowed file types for uploads
+ALLOWED_UPLOAD_EXTENSIONS = [
+    # Documents
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".odt",
+    ".ods",
+    ".odp",
+    ".rtf",
+    ".txt",
+    ".csv",
+    # Images
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".bmp",
+    ".tiff",
+    ".webp",
+    ".svg",
+    # Audio
+    ".mp3",
+    ".wav",
+    ".ogg",
+    ".m4a",
+    ".aac",
+    # Video
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".wmv",
+    ".flv",
+    ".webm",
+    # Archives
+    ".zip",
+    ".rar",
+    ".7z",
+    ".tar",
+    ".gz",
+    ".bz2",
+    # Code
+    ".py",
+    ".js",
+    ".html",
+    ".css",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
+]
+
+# Maximum file sizes by type (in bytes)
+MAX_FILE_SIZES = {
+    # Documents: 50MB
+    "document": 50 * 1024 * 1024,
+    # Images: 10MB
+    "image": 10 * 1024 * 1024,
+    # Audio: 100MB
+    "audio": 100 * 1024 * 1024,
+    # Video: 500MB
+    "video": 500 * 1024 * 1024,
+    # Archives: 200MB
+    "archive": 200 * 1024 * 1024,
+    # Code files: 5MB
+    "code": 5 * 1024 * 1024,
+    # Default: 100MB
+    "default": 100 * 1024 * 1024,
+}

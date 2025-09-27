@@ -60,3 +60,30 @@ INSTALLED_APPS += ["django_extensions"]
 
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#task-eager-propagates
 CELERY_TASK_EAGER_PROPAGATES = True
+
+# Document Upload Settings - Development
+# ------------------------------------------------------------------------------
+# Larger file sizes for development (500MB)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024  # 500MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024  # 500MB
+
+# Allow more fields for development (increased to handle extreme multipart uploads)
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000
+
+# Use temporary files for large uploads in development
+FILE_UPLOAD_HANDLERS = [
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",
+    "django.core.files.uploadhandler.MemoryFileUploadHandler",
+]
+
+# Override file size limits for development
+MAX_FILE_SIZES = {
+    # More generous limits for development
+    "document": 200 * 1024 * 1024,  # 200MB
+    "image": 50 * 1024 * 1024,  # 50MB
+    "audio": 300 * 1024 * 1024,  # 300MB
+    "video": 1024 * 1024 * 1024,  # 1GB
+    "archive": 500 * 1024 * 1024,  # 500MB
+    "code": 50 * 1024 * 1024,  # 50MB
+    "default": 500 * 1024 * 1024,  # 500MB
+}

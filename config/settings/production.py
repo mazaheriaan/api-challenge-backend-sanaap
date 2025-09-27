@@ -126,3 +126,52 @@ LOGGING = {
 SPECTACULAR_SETTINGS["SERVERS"] = [
     {"url": "https://example.com", "description": "Production server"},
 ]
+
+# Document Upload Settings - Production
+# ------------------------------------------------------------------------------
+# Production file size limits (50MB max for security)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+
+# Limit number of fields (increased for multipart uploads but kept reasonable for security)
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 2000
+
+# Use temporary files for all uploads in production for security
+FILE_UPLOAD_HANDLERS = [
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",
+]
+
+# Strict file size limits for production
+MAX_FILE_SIZES = {
+    "document": 25 * 1024 * 1024,  # 25MB
+    "image": 5 * 1024 * 1024,  # 5MB
+    "audio": 50 * 1024 * 1024,  # 50MB
+    "video": 100 * 1024 * 1024,  # 100MB
+    "archive": 50 * 1024 * 1024,  # 50MB
+    "code": 1 * 1024 * 1024,  # 1MB
+    "default": 25 * 1024 * 1024,  # 25MB
+}
+
+# Additional security settings for production uploads
+ALLOWED_UPLOAD_EXTENSIONS = [
+    # Restrict to common safe file types in production
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".txt",
+    ".csv",
+    ".rtf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".mp3",
+    ".wav",
+    ".mp4",
+    ".zip",
+]
