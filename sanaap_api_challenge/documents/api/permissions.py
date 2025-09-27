@@ -1,5 +1,4 @@
 from django.contrib.auth import get_user_model
-from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import permissions
@@ -8,70 +7,22 @@ from rest_framework.views import APIView
 
 from sanaap_api_challenge.documents.models import Document
 from sanaap_api_challenge.documents.models import Share
-from sanaap_api_challenge.documents.utils.permissions import CachedPermissionChecker
-from sanaap_api_challenge.documents.utils.permissions import check_document_access
 
 User = get_user_model()
 
 
-class BaseDocumentPermission(permissions.BasePermission):
+class DocumentPermission(permissions.BasePermission):
+    """
+    Permission class for Document operations.
+
+    - Anyone authenticated can list documents (filtered by access)
+    - Anyone authenticated can create documents
+    - Only owners can delete documents
+    - View access requires: owner, shared with user, or public document
+    """
+
     def has_permission(self, request: Request, view: APIView) -> bool:
-        if not request.user.is_authenticated:
-            return False
-
-        # Superusers have full access
-        if request.user.is_superuser:
-            return True
-
-        if self._check_group_permission(request.user):
-            return True
-
-        return self._check_view_permission(request, view)
-
-    def _check_group_permission(self, user: User) -> bool:
-        cache_key = f"user_groups:{user.id}"
-        cached_groups = cache.get(cache_key)
-
-        if cached_groups is None:
-            cached_groups = list(user.groups.values_list("name", flat=True))
-            cache.set(cache_key, cached_groups, 300)  # 5 minutes
-
-        return "document_admins" in cached_groups
-
-    def _check_view_permission(self, request: Request, view: APIView) -> bool:
-        return True
-
-
-class DocumentPermission(BaseDocumentPermission):
-    PERMISSION_MAPPING = {
-        "GET": "view_doc",
-        "POST": "add_document",
-        "DELETE": "delete_doc",
-    }
-
-    def _check_view_permission(self, request: Request, view: APIView) -> bool:
-        if view.action == "list":
-            return True
-
-        if view.action == "create":
-            return self._can_create_document(request.user)
-
-        return True
-
-    def _can_create_document(self, user: User) -> bool:
-        cache_key = f"can_create_doc:{user.id}"
-        cached_result = cache.get(cache_key)
-
-        if cached_result is not None:
-            return cached_result
-
-        # Check if user is in editor/admin groups or has permission
-        result = user.groups.filter(
-            name__in=["document_admins", "document_editors"],
-        ).exists() or user.has_perm("documents.add_document")
-
-        cache.set(cache_key, result, 300)
-        return result
+        return request.user.is_authenticated
 
     def has_object_permission(
         self,
@@ -81,41 +32,73 @@ class DocumentPermission(BaseDocumentPermission):
     ) -> bool:
         user = request.user
 
-        if user.is_superuser or self._check_group_permission(user):
+        if user.is_superuser:
             return True
 
         if obj.owner == user:
             return True
 
-        checker = CachedPermissionChecker(user)
-
-        # Map HTTP methods to required permissions
         if request.method in permissions.SAFE_METHODS:
-            return self._check_read_permission(user, obj, checker)
+            if obj.is_public:
+                return True
+
+            return (
+                obj.shares.filter(
+                    shared_with=user,
+                )
+                .filter(
+                    Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()),
+                )
+                .exists()
+            )
+
         if request.method == "DELETE":
-            return checker.has_perm("documents.delete_doc", obj)
+            return False
 
         return False
 
-    def _check_read_permission(
+
+class SharePermission(permissions.BasePermission):
+    """
+    Permission class for Share operations.
+
+    Rules:
+    - Only document owner or users with share permission can create/modify shares
+    - Users can view shares they created or are part of
+    - Only document owner or share creator can delete a share
+    """
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        return request.user.is_authenticated
+
+    def has_object_permission(
         self,
-        user: User,
-        obj: Document,
-        checker: CachedPermissionChecker,
+        request: Request,
+        view: APIView,
+        obj: Share,
     ) -> bool:
-        if checker.has_perm("documents.view_doc", obj):
+        user = request.user
+
+        if user.is_superuser:
             return True
 
-        if obj.is_public:
-            return True
+        document = obj.document
 
-        return Share.objects.filter(
-            Q(document=obj, shared_with=user)
-            & (Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())),
-        ).exists()
+        if request.method in permissions.SAFE_METHODS:
+            return user in (document.owner, obj.shared_with, obj.shared_by)
+
+        return user in (document.owner, obj.shared_by)
 
 
-class CanShareDocument(BaseDocumentPermission):
+class CanShareDocument(permissions.BasePermission):
+    """
+    Permission to check if user can share a document.
+
+    Rules:
+    - Document owner can always share
+    - Users with explicit share permission can share
+    """
+
     def has_object_permission(
         self,
         request: Request,
@@ -124,7 +107,7 @@ class CanShareDocument(BaseDocumentPermission):
     ) -> bool:
         user = request.user
 
-        if obj.owner == user:
+        if user.is_superuser:
             return True
 
-        return check_document_access(user, obj, "documents.share_doc")
+        return obj.owner == user

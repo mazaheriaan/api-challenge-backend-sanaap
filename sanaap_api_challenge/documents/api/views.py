@@ -6,8 +6,6 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
-from guardian.shortcuts import assign_perm
-from guardian.shortcuts import remove_perm
 from rest_framework import filters
 from rest_framework import status
 from rest_framework import viewsets
@@ -20,8 +18,6 @@ from rest_framework.views import APIView
 from sanaap_api_challenge.documents.models import Access
 from sanaap_api_challenge.documents.models import Document
 from sanaap_api_challenge.documents.models import Share
-from sanaap_api_challenge.documents.utils.permissions import CachedPermissionChecker
-from sanaap_api_challenge.documents.utils.permissions import PermissionQueryOptimizer
 from sanaap_api_challenge.utils.minio_client import minio_client
 
 from .filters import DocumentFilter
@@ -29,6 +25,7 @@ from .filters import ShareFilter
 from .pagination import DocumentPagination
 from .permissions import CanShareDocument
 from .permissions import DocumentPermission
+from .permissions import SharePermission
 from .serializers import AccessLogSerializer
 from .serializers import BulkShareSerializer
 from .serializers import DocumentCreateSerializer
@@ -38,13 +35,13 @@ from .serializers import ShareSerializer
 from .utils import get_client_ip
 
 
-def log_document_access(
+def log_document_access(  # noqa: PLR0913
     document,
     user,
     action,
     request,
     additional_info=None,
-    success=True,
+    success=True,  # noqa: FBT002
     error_message="",
 ):
     Access.objects.create(
@@ -108,32 +105,27 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return DocumentDetailSerializer
 
     def get_queryset(self):
-        """Filter documents based on user permissions with optimization."""
+        """Filter documents based on user access."""
         user = self.request.user
 
         if user.is_superuser:
             return self.queryset
 
-        optimizer = PermissionQueryOptimizer()
-        queryset = optimizer.get_documents_for_user(
-            user=user,
-            permissions="documents.view_doc",
-            queryset=self.queryset,
-        )
-
-        if self.action == "list":
-            checker = CachedPermissionChecker(user)
-            self.permission_checker = checker
-
-        return queryset
+        # Return documents that user can access:
+        # 1. Documents owned by user
+        # 2. Documents shared with user (not expired)
+        # 3. Public documents
+        return self.queryset.filter(
+            Q(owner=user)
+            | Q(shares__shared_with=user, shares__expires_at__isnull=True)
+            | Q(shares__shared_with=user, shares__expires_at__gt=timezone.now())
+            | Q(is_public=True),
+        ).distinct()
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-
-        if hasattr(self, "permission_checker") and queryset.exists():
-            self.permission_checker.prefetch_perms(queryset[:100])
-
         page = self.paginate_queryset(queryset)
+
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
@@ -142,14 +134,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def perform_create(self, serializer):
-        document = serializer.save()
-
-        # Assign object-level permissions to owner
-        assign_perm("documents.view_doc", self.request.user, document)
-        assign_perm("documents.edit_doc", self.request.user, document)
-        assign_perm("documents.delete_doc", self.request.user, document)
-        assign_perm("documents.download_doc", self.request.user, document)
-        assign_perm("documents.share_doc", self.request.user, document)
+        # Save document with current user as owner
+        serializer.save(owner=self.request.user, created_by=self.request.user)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -249,30 +235,26 @@ class DocumentViewSet(viewsets.ModelViewSet):
         permission_classes=[IsAuthenticated, CanShareDocument],
     )
     def share(self, request, pk=None):
+        """Share document with another user."""
         document = self.get_object()
 
-        serializer = ShareSerializer(
-            data=request.data,
-            context={"request": request, "document": document},
-        )
-        serializer.is_valid(raise_exception=True)
-
-        shared_with_id = serializer.validated_data.get("shared_with_id")
+        # Check if already shared with this user
+        shared_with_id = request.data.get("shared_with_id")
         if document.shares.filter(shared_with_id=shared_with_id).exists():
             return Response(
                 {"detail": _("Document is already shared with this user.")},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Create share
+        serializer = ShareSerializer(
+            data=request.data,
+            context={"request": request, "document": document},
+        )
+        serializer.is_valid(raise_exception=True)
         share = serializer.save()
 
-        assign_perm("documents.view_doc", share.shared_with, document)
-
-        if share.permission_level == "edit":
-            assign_perm("documents.edit_doc", share.shared_with, document)
-        elif share.permission_level == "download":
-            assign_perm("documents.download_doc", share.shared_with, document)
-
+        # Log the action
         log_document_access(
             document,
             request.user,
@@ -292,6 +274,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         permission_classes=[IsAuthenticated, CanShareDocument],
     )
     def bulk_share(self, request, pk=None):
+        """Share document with multiple users."""
         document = self.get_object()
 
         serializer = BulkShareSerializer(data=request.data)
@@ -303,10 +286,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         created_shares = []
         for user_id in user_ids:
-            if document.shares.filter(shared_with_id=user_id).exists():
-                continue
-
-            if user_id == document.owner.id:
+            # Skip if already shared or if user is owner
+            if (
+                document.shares.filter(shared_with_id=user_id).exists()
+                or user_id == document.owner.id
+            ):
                 continue
 
             share = Share.objects.create(
@@ -316,25 +300,20 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 permission_level=permission_level,
                 expires_at=expires_at,
             )
-
-            assign_perm("documents.view_doc", share.shared_with, document)
-            if permission_level == "edit":
-                assign_perm("documents.edit_doc", share.shared_with, document)
-            elif permission_level == "download":
-                assign_perm("documents.download_doc", share.shared_with, document)
-
             created_shares.append(share)
 
-        log_document_access(
-            document,
-            request.user,
-            "share",
-            request,
-            {
-                "shared_count": len(created_shares),
-                "permission_level": permission_level,
-            },
-        )
+        # Log the action
+        if created_shares:
+            log_document_access(
+                document,
+                request.user,
+                "share",
+                request,
+                {
+                    "shared_count": len(created_shares),
+                    "permission_level": permission_level,
+                },
+            )
 
         return Response(
             {
@@ -346,38 +325,30 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["delete"], url_path="shares/(?P<share_id>[0-9]+)")
     def unshare(self, request, pk=None, share_id=None):
+        """Remove a share from a document."""
         document = self.get_object()
 
-        if not (
-            request.user == document.owner
-            or request.user.has_perm("share_doc", document)
-        ):
+        # Only owner can unshare
+        if request.user != document.owner:
             return Response(
-                {
-                    "detail": _(
-                        "You don't have permission to manage shares for this document.",
-                    ),
-                },
+                {"detail": _("Only the document owner can remove shares.")},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
         try:
             share = document.shares.get(id=share_id)
+            username = share.shared_with.username
 
-            remove_perm("documents.view_doc", share.shared_with, document)
-            remove_perm("documents.edit_doc", share.shared_with, document)
-            remove_perm("documents.download_doc", share.shared_with, document)
-
+            # Log before deleting
             log_document_access(
                 document,
                 request.user,
                 "unshare",
                 request,
-                {"unshared_from": share.shared_with.username},
+                {"unshared_from": username},
             )
 
             share.delete()
-
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         except Share.DoesNotExist:
@@ -414,10 +385,17 @@ class DocumentViewSet(viewsets.ModelViewSet):
 class ShareViewSet(viewsets.ModelViewSet):
     queryset = Share.objects.select_related("document", "shared_with", "shared_by")
     serializer_class = ShareSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SharePermission]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_class = ShareFilter
     ordering = ["-created"]
+    http_method_names = [
+        "get",
+        "patch",
+        "delete",
+        "head",
+        "options",
+    ]
 
     def get_queryset(self):
         user = self.request.user
@@ -425,40 +403,43 @@ class ShareViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return self.queryset
 
-        return self.queryset.filter(Q(shared_by=user) | Q(shared_with=user))
+        # Users can see:
+        # 1. Shares they created
+        # 2. Shares where they are the recipient
+        # 3. Shares for documents they own
+        return self.queryset.filter(
+            Q(shared_by=user) | Q(shared_with=user) | Q(document__owner=user),
+        ).distinct()
 
     def perform_update(self, serializer):
-        old_permission = serializer.instance.permission_level
         share = serializer.save()
 
-        if old_permission != share.permission_level:
-            remove_perm("documents.edit_doc", share.shared_with, share.document)
-            remove_perm("documents.download_doc", share.shared_with, share.document)
-
-            if share.permission_level == "edit":
-                assign_perm("documents.edit_doc", share.shared_with, share.document)
-            elif share.permission_level == "download":
-                assign_perm("documents.download_doc", share.shared_with, share.document)
+        log_document_access(
+            share.document,
+            self.request.user,
+            "edit",
+            self.request,
+            {
+                "share_id": share.id,
+                "permission_level": share.permission_level,
+            },
+        )
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        if not (
-            request.user == instance.document.owner
-            or request.user == instance.shared_by
-            or request.user.has_perm("share_doc", instance.document)
-        ):
-            return Response(
-                {"detail": _("You don't have permission to remove this share.")},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        remove_perm("documents.view_doc", instance.shared_with, instance.document)
-        remove_perm("documents.edit_doc", instance.shared_with, instance.document)
-        remove_perm("documents.download_doc", instance.shared_with, instance.document)
+        log_document_access(
+            instance.document,
+            request.user,
+            "unshare",
+            request,
+            {
+                "unshared_from": instance.shared_with.username,
+                "permission_level": instance.permission_level,
+            },
+        )
 
         self.perform_destroy(instance)
-
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
