@@ -5,6 +5,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema
 from guardian.shortcuts import assign_perm
 from guardian.shortcuts import remove_perm
 from rest_framework import filters
@@ -15,15 +16,12 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from drf_spectacular.utils import extend_schema
 
 from sanaap_api_challenge.documents.models import Access
 from sanaap_api_challenge.documents.models import Document
 from sanaap_api_challenge.documents.models import Share
-from sanaap_api_challenge.documents.utils.permissions import (
-    CachedPermissionChecker,
-    PermissionQueryOptimizer,
-)
+from sanaap_api_challenge.documents.utils.permissions import CachedPermissionChecker
+from sanaap_api_challenge.documents.utils.permissions import PermissionQueryOptimizer
 from sanaap_api_challenge.utils.minio_client import minio_client
 
 from .filters import DocumentFilter
@@ -123,7 +121,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         optimizer = PermissionQueryOptimizer()
         queryset = optimizer.get_documents_for_user(
-            user=user, permissions="documents.view_doc", queryset=self.queryset
+            user=user,
+            permissions="documents.view_doc",
+            queryset=self.queryset,
         )
 
         if self.action == "list":
@@ -136,7 +136,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())
 
         if hasattr(self, "permission_checker") and queryset.exists():
-            self.permission_checker.prefetch_perms(queryset[:100]) 
+            self.permission_checker.prefetch_perms(queryset[:100])
 
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -518,7 +518,6 @@ class MyDocumentsView(APIView):
 
 
 class PublicDocumentsView(APIView):
-
     permission_classes = []
 
     @extend_schema(

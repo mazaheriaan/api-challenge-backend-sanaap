@@ -1,18 +1,18 @@
-from typing import Dict, Iterable, List, Optional, Set, Union
+from collections.abc import Iterable
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.cache import cache
-from django.db.models import Q, QuerySet
+from django.db.models import Q
+from django.db.models import QuerySet
 from guardian.core import ObjectPermissionChecker
-from guardian.shortcuts import (
-    assign_perm,
-    get_objects_for_user,
-    get_users_with_perms,
-    remove_perm,
-)
+from guardian.shortcuts import assign_perm
+from guardian.shortcuts import get_objects_for_user
+from guardian.shortcuts import get_users_with_perms
+from guardian.shortcuts import remove_perm
 
-from sanaap_api_challenge.documents.models import Document, Share
+from sanaap_api_challenge.documents.models import Document
+from sanaap_api_challenge.documents.models import Share
 
 User = get_user_model()
 
@@ -21,7 +21,7 @@ class CachedPermissionChecker:
     CACHE_PREFIX = "doc_perms"
     CACHE_TIMEOUT = 300  # 5 minutes
 
-    def __init__(self, user_or_group: Union[User, Group]):
+    def __init__(self, user_or_group: User | Group):
         self.user_or_group = user_or_group
         self.checker = ObjectPermissionChecker(user_or_group)
         self.is_user = isinstance(user_or_group, User)
@@ -61,7 +61,7 @@ class CachedPermissionChecker:
                 cache_key = self._get_cache_key(perm, obj)
                 cache.set(cache_key, True, self.CACHE_TIMEOUT)
 
-    def get_perms(self, obj: Document) -> List[str]:
+    def get_perms(self, obj: Document) -> list[str]:
         cache_key = f"{self._cache_key_prefix}:all_perms:{obj.id}"
         cached_perms = cache.get(cache_key)
 
@@ -73,7 +73,7 @@ class CachedPermissionChecker:
 
         return perms
 
-    def invalidate_cache(self, obj: Optional[Document] = None) -> None:
+    def invalidate_cache(self, obj: Document | None = None) -> None:
         if obj:
             pattern = f"{self._cache_key_prefix}:*:{obj.id}"
         else:
@@ -85,8 +85,8 @@ class CachedPermissionChecker:
 class BulkPermissionManager:
     @staticmethod
     def assign_bulk_permissions(
-        permissions: List[str],
-        users: List[User],
+        permissions: list[str],
+        users: list[User],
         obj: Document,
     ) -> int:
         count = 0
@@ -103,8 +103,8 @@ class BulkPermissionManager:
 
     @staticmethod
     def remove_bulk_permissions(
-        permissions: List[str],
-        users: List[User],
+        permissions: list[str],
+        users: list[User],
         obj: Document,
     ) -> int:
         count = 0
@@ -125,7 +125,7 @@ class BulkPermissionManager:
         source_doc: Document,
         target_doc: Document,
         include_shares: bool = True,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         result = {"permissions": 0, "shares": 0}
 
         users_with_perms = get_users_with_perms(
@@ -183,7 +183,7 @@ class PermissionTemplates:
         template_name: str,
         user: User,
         document: Document,
-    ) -> List[str]:
+    ) -> list[str]:
         templates = {
             "owner": cls.OWNER_PERMISSIONS,
             "editor": cls.EDITOR_PERMISSIONS,
@@ -206,8 +206,8 @@ class PermissionQueryOptimizer:
     @staticmethod
     def get_documents_for_user(
         user: User,
-        permissions: Union[str, List[str]],
-        queryset: Optional[QuerySet] = None,
+        permissions: str | list[str],
+        queryset: QuerySet | None = None,
     ) -> QuerySet:
         if queryset is None:
             queryset = Document.objects.all()
@@ -235,7 +235,7 @@ class PermissionQueryOptimizer:
 
         # Also include documents shared with user
         shared_docs = queryset.filter(
-            Q(shares__shared_with=user) | Q(owner=user) | Q(is_public=True)
+            Q(shares__shared_with=user) | Q(owner=user) | Q(is_public=True),
         ).distinct()
 
         return docs_with_perms.union(shared_docs)
@@ -244,7 +244,7 @@ class PermissionQueryOptimizer:
     def prefetch_permissions_for_queryset(
         queryset: QuerySet,
         user: User,
-    ) -> Dict[int, Set[str]]:
+    ) -> dict[int, set[str]]:
         checker = ObjectPermissionChecker(user)
         checker.prefetch_perms(queryset)
 
@@ -277,11 +277,10 @@ def check_document_access(
     if use_cache:
         checker = CachedPermissionChecker(user)
         return checker.has_perm(required_permission, document)
-    else:
-        return user.has_perm(required_permission, document)
+    return user.has_perm(required_permission, document)
 
 
-def get_user_document_permissions(user: User, document: Document) -> Dict[str, bool]:
+def get_user_document_permissions(user: User, document: Document) -> dict[str, bool]:
     checker = CachedPermissionChecker(user)
     checker.prefetch_perms([document])
 

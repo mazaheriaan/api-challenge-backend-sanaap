@@ -114,6 +114,7 @@ class DocumentPermission(BaseDocumentPermission):
             & (Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())),
         ).exists()
 
+
 class CanShareDocument(BaseDocumentPermission):
     def has_object_permission(
         self,

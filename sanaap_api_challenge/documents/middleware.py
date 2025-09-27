@@ -3,14 +3,16 @@ import logging
 import time
 
 from django.contrib.auth import get_user_model
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest
+from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.deprecation import MiddlewareMixin
-# Translate 
-from django.utils.translation import gettext_lazy as _
+
+# Translate
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
 
 class RequestLoggingMiddleware(MiddlewareMixin):
     def process_request(self, request: HttpRequest) -> None:
@@ -41,7 +43,9 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         logger.info(f"API Request: {json.dumps(log_data)}")
 
     def process_response(
-        self, request: HttpRequest, response: HttpResponse
+        self,
+        request: HttpRequest,
+        response: HttpResponse,
     ) -> HttpResponse:
         # Calculate request duration
         if hasattr(request, "_start_time"):

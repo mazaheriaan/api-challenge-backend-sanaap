@@ -287,7 +287,9 @@ class Access(TimeStampedModel):
 # Performance-optimized Guardian permission models with direct foreign keys
 class DocumentUserObjectPermission(UserObjectPermissionBase):
     content_object = models.ForeignKey(
-        Document, on_delete=models.CASCADE, related_name="user_permissions"
+        Document,
+        on_delete=models.CASCADE,
+        related_name="user_permissions",
     )
 
     class Meta:
@@ -302,7 +304,9 @@ class DocumentUserObjectPermission(UserObjectPermissionBase):
 
 class DocumentGroupObjectPermission(GroupObjectPermissionBase):
     content_object = models.ForeignKey(
-        Document, on_delete=models.CASCADE, related_name="group_permissions"
+        Document,
+        on_delete=models.CASCADE,
+        related_name="group_permissions",
     )
 
     class Meta:

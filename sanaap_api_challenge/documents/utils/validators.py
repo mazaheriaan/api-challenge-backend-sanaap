@@ -1,5 +1,4 @@
 import os
-from typing import List, Optional, Tuple
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -33,18 +32,17 @@ def get_file_category(filename: str) -> str:
 
     if ext in document_exts:
         return "document"
-    elif ext in image_exts:
+    if ext in image_exts:
         return "image"
-    elif ext in audio_exts:
+    if ext in audio_exts:
         return "audio"
-    elif ext in video_exts:
+    if ext in video_exts:
         return "video"
-    elif ext in archive_exts:
+    if ext in archive_exts:
         return "archive"
-    elif ext in code_exts:
+    if ext in code_exts:
         return "code"
-    else:
-        return "default"
+    return "default"
 
 
 def validate_file_extension(uploaded_file: UploadedFile) -> None:
@@ -59,7 +57,7 @@ def validate_file_extension(uploaded_file: UploadedFile) -> None:
 
     if ext not in allowed_extensions:
         message = gettext_lazy(
-            "File type '%(extension)s' is not allowed. Allowed types: %(allowed)s"
+            "File type '%(extension)s' is not allowed. Allowed types: %(allowed)s",
         ) % {"extension": ext, "allowed": ", ".join(allowed_extensions)}
         raise ValidationError(message)
 
@@ -81,7 +79,7 @@ def validate_file_size(uploaded_file: UploadedFile) -> None:
 
         message = gettext_lazy(
             "File size (%(actual_size).1f MB) exceeds maximum allowed size "
-            "for %(category)s files (%(max_size).1f MB)"
+            "for %(category)s files (%(max_size).1f MB)",
         ) % {
             "actual_size": actual_size_mb,
             "max_size": max_size_mb,
@@ -105,7 +103,7 @@ def validate_file_content(uploaded_file: UploadedFile) -> None:
     for pattern in suspicious_patterns:
         if pattern in uploaded_file.name:
             message = gettext_lazy(
-                "File name contains suspicious characters: %(filename)s"
+                "File name contains suspicious characters: %(filename)s",
             ) % {"filename": uploaded_file.name}
             raise ValidationError(message)
 
@@ -131,7 +129,7 @@ def validate_file_content(uploaded_file: UploadedFile) -> None:
     _, ext = os.path.splitext(uploaded_file.name.lower())
     if ext in dangerous_extensions:
         message = gettext_lazy(
-            "Executable file types are not allowed: %(extension)s"
+            "Executable file types are not allowed: %(extension)s",
         ) % {"extension": ext}
         raise ValidationError(message)
 
@@ -145,14 +143,14 @@ def validate_file_content(uploaded_file: UploadedFile) -> None:
         if uploaded_file.name.lower().endswith(".pdf"):
             if not file_header.startswith(b"%PDF"):
                 raise ValidationError(
-                    gettext_lazy("PDF file appears to be corrupted or fake")
+                    gettext_lazy("PDF file appears to be corrupted or fake"),
                 )
 
         # ZIP files should start with PK
         elif uploaded_file.name.lower().endswith(".zip"):
             if not file_header.startswith(b"PK"):
                 raise ValidationError(
-                    gettext_lazy("ZIP file appears to be corrupted or fake")
+                    gettext_lazy("ZIP file appears to be corrupted or fake"),
                 )
 
     except Exception:
@@ -160,7 +158,7 @@ def validate_file_content(uploaded_file: UploadedFile) -> None:
         pass
 
 
-def validate_uploaded_file(uploaded_file: UploadedFile) -> Tuple[bool, List[str]]:
+def validate_uploaded_file(uploaded_file: UploadedFile) -> tuple[bool, list[str]]:
     errors = []
 
     try:
@@ -199,8 +197,8 @@ def get_upload_limits_info() -> dict:
 
 
 def create_file_validator(
-    max_size_bytes: Optional[int] = None,
-    allowed_extensions: Optional[List[str]] = None,
+    max_size_bytes: int | None = None,
+    allowed_extensions: list[str] | None = None,
     require_content_validation: bool = True,
 ):
     def validator(uploaded_file: UploadedFile) -> None:
@@ -210,7 +208,7 @@ def create_file_validator(
             actual_size_mb = uploaded_file.size / (1024 * 1024)
             message = gettext_lazy(
                 "File size (%(actual_size).1f MB) exceeds maximum allowed "
-                "size (%(max_size).1f MB)"
+                "size (%(max_size).1f MB)",
             ) % {"actual_size": actual_size_mb, "max_size": max_size_mb}
             raise ValidationError(message)
 
@@ -220,7 +218,7 @@ def create_file_validator(
             if ext not in allowed_extensions:
                 message = gettext_lazy(
                     "File type '%(extension)s' is not allowed. "
-                    "Allowed types: %(allowed)s"
+                    "Allowed types: %(allowed)s",
                 ) % {"extension": ext, "allowed": ", ".join(allowed_extensions)}
                 raise ValidationError(message)
 

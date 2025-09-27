@@ -4,7 +4,9 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from guardian.admin import GuardedModelAdmin
 
-from .models import Access, Document, Share
+from .models import Access
+from .models import Document
+from .models import Share
 
 
 class ShareInline(admin.TabularInline):
@@ -80,7 +82,7 @@ class DocumentAdmin(GuardedModelAdmin):
                     "created_by",
                     "updated_by",
                     "is_public",
-                )
+                ),
             },
         ),
         (
