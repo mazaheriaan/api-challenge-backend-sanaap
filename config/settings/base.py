@@ -1,7 +1,6 @@
-# ruff: noqa: ERA001, E501
+# ruff: noqa: E501
 """Base settings to build other settings files upon."""
 
-import ssl
 from pathlib import Path
 
 import environ
@@ -39,12 +38,12 @@ WSGI_APPLICATION = "config.wsgi.application"
 # APPS
 # ------------------------------------------------------------------------------
 DJANGO_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
 ]
 THIRD_PARTY_APPS = [
     "rest_framework",
@@ -54,7 +53,7 @@ THIRD_PARTY_APPS = [
     "guardian",
 ]
 
-LOCAL_APPS = []
+LOCAL_APPS = ["sanaap_api_challenge"]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 

@@ -11,7 +11,6 @@ from rest_framework.authtoken.views import obtain_auth_token
 urlpatterns = [
     # Django Admin
     path(settings.ADMIN_URL, admin.site.urls),
-
 ]
 if settings.DEBUG:
     # Static file serving when using Gunicorn + Uvicorn for local web socket development
