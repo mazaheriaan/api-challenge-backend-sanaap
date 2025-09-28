@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Upload Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --bg: #ffffff;
+            --bg-secondary: #f3f4f6;
+            --text: #111827;
+            --text-secondary: #6b7280;
+            --border: #e5e7eb;
+            --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-secondary);
+            color: var(--text);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .header {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow);
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        .header p {
+            color: var(--text-secondary);
+        }
+
+        /* Login Form */
+        .login-container {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 400px;
+            margin: 0 auto;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .login-container h2 {
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background: var(--bg-secondary);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        .btn-danger {
+            background: var(--error);
+            color: white;
+        }
+
+        /* Upload Area */
+        .upload-container {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: var(--shadow);
+            margin-bottom: 2rem;
+        }
+
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+            background: var(--bg-secondary);
+        }
+
+        .drop-zone:hover {
+            border-color: var(--primary);
+            background: rgba(79, 70, 229, 0.05);
+        }
+
+        .drop-zone.drag-over {
+            border-color: var(--primary);
+            background: rgba(79, 70, 229, 0.1);
+            transform: scale(1.02);
+        }
+
+        .drop-zone-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .drop-zone h3 {
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        .drop-zone p {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        /* File List */
+        .files-container {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: var(--shadow);
+        }
+
+        .files-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .files-header h2 {
+            font-size: 1.5rem;
+        }
+
+        .file-item {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            transition: all 0.3s;
+        }
+
+        .file-item:hover {
+            box-shadow: var(--shadow);
+        }
+
+        .file-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .file-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--primary);
+            color: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .file-details h4 {
+            margin-bottom: 0.25rem;
+            color: var(--text);
+        }
+
+        .file-details p {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .file-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status-pending {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+
+        .status-processing {
+            background: rgba(79, 70, 229, 0.1);
+            color: var(--primary);
+        }
+
+        .status-completed {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .status-failed {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--error);
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            margin-top: 1rem;
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.3),
+                transparent
+            );
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        /* User Info */
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .toast {
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            min-width: 300px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast-success {
+            border-left: 4px solid var(--success);
+        }
+
+        .toast-error {
+            border-left: 4px solid var(--error);
+        }
+
+        .toast-info {
+            border-left: 4px solid var(--primary);
+        }
+
+        .spinner {
+            border: 2px solid var(--border);
+            border-top: 2px solid var(--primary);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 640px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .header, .upload-container, .files-container {
+                padding: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div class="container">
+        <div class="header">
+            <h1>📄 Document Upload Monitor</h1>
+            <p>Upload documents and monitor their processing status in real-time</p>
+        </div>
+
+        <!-- Login Section -->
+        <div id="loginSection">
+            <div class="login-container">
+                <h2>Login</h2>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="loginBtn">
+                        <span id="loginBtnText">Login</span>
+                        <div class="spinner hidden" id="loginSpinner"></div>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main App Section -->
+        <div id="appSection" class="hidden">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">U</div>
+                <div>
+                    <strong id="userDisplay">User</strong>
+                    <br>
+                    <small id="serverUrl">Connected</small>
+                </div>
+                <button class="btn btn-secondary" style="margin-left: auto;" onclick="logout()">Logout</button>
+            </div>
+
+            <!-- Upload Area -->
+            <div class="upload-container">
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-icon">📤</div>
+                    <h3>Drop files here or click to upload</h3>
+                    <p>Supports all document types • Max 500MB per file</p>
+                    <button class="btn btn-primary">Choose Files</button>
+                    <input type="file" id="fileInput" multiple accept="*">
+                </div>
+            </div>
+
+            <!-- Files List -->
+            <div class="files-container">
+                <div class="files-header">
+                    <h2>Uploaded Documents</h2>
+                    <button class="btn btn-secondary" onclick="clearCompleted()">Clear Completed</button>
+                </div>
+                <div id="filesList"></div>
+                <div id="noFiles" style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+                    No files uploaded yet
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE = "http://localhost:8000";
+        const WS_BASE = API_BASE.replace('http', 'ws');
+
+        // State
+        let authToken = sessionStorage.getItem('authToken');
+        let username = sessionStorage.getItem('username');
+        let csrfToken = '';
+        let uploadedFiles = new Map();
+        let activeWebSockets = new Map();
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            if (authToken) {
+                showApp();
+            } else {
+                showLogin();
+            }
+            setupEventListeners();
+            getCsrfToken();
+        });
+
+        // Get CSRF Token from cookie
+        function getCsrfToken() {
+            // Try to get from cookie first
+            const csrfCookie = document.cookie
+                .split('; ')
+                .find(row => row.startsWith('csrftoken='));
+            if (csrfCookie) {
+                csrfToken = csrfCookie.split('=')[1];
+                console.log('CSRF token found in cookie');
+                return;
+            }
+
+            // If no cookie, try to get from meta tag (if available)
+            const csrfMeta = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (csrfMeta) {
+                csrfToken = csrfMeta.getAttribute('content');
+                console.log('CSRF token found in meta tag');
+                return;
+            }
+
+            console.log('No CSRF token found, will try to get one on first request');
+        }
+
+        // Try to get CSRF token from any failed request
+        async function ensureCsrfToken() {
+            if (csrfToken) return csrfToken;
+
+            try {
+                // Make a simple request to any endpoint to trigger CSRF cookie
+                await fetch(`${API_BASE}/api/auth-token/`, {
+                    method: 'OPTIONS',
+                    credentials: 'include'
+                });
+
+                // Try to get the cookie again
+                const csrfCookie = document.cookie
+                    .split('; ')
+                    .find(row => row.startsWith('csrftoken='));
+                if (csrfCookie) {
+                    csrfToken = csrfCookie.split('=')[1];
+                    console.log('CSRF token obtained from OPTIONS request');
+                    return csrfToken;
+                }
+            } catch (error) {
+                console.log('Could not get CSRF token via OPTIONS:', error);
+            }
+
+            // If still no token, we'll proceed without it
+            console.log('Proceeding without CSRF token');
+            return '';
+        }
+
+        // Setup Event Listeners
+        function setupEventListeners() {
+            // Login form
+            document.getElementById('loginForm').addEventListener('submit', handleLogin);
+
+            // File upload
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+
+            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('dragover', handleDragOver);
+            dropZone.addEventListener('dragleave', handleDragLeave);
+            dropZone.addEventListener('drop', handleDrop);
+            fileInput.addEventListener('change', handleFileSelect);
+        }
+
+        // Login Handler
+        async function handleLogin(e) {
+            e.preventDefault();
+
+            const loginBtn = document.getElementById('loginBtn');
+            const loginBtnText = document.getElementById('loginBtnText');
+            const loginSpinner = document.getElementById('loginSpinner');
+
+            loginBtn.disabled = true;
+            loginBtnText.textContent = 'Logging in...';
+            loginSpinner.classList.remove('hidden');
+
+            const formData = new FormData(e.target);
+            username = formData.get('username');
+            const password = formData.get('password');
+
+            try {
+                // Ensure we have a CSRF token before making the request
+                await ensureCsrfToken();
+
+                const response = await fetch(`${API_BASE}/api/auth-token/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    authToken = data.token;
+                    sessionStorage.setItem('authToken', authToken);
+                    sessionStorage.setItem('username', username);
+                    showToast('Login successful!', 'success');
+                    showApp();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.non_field_errors?.[0] || 'Invalid credentials');
+                }
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                loginBtn.disabled = false;
+                loginBtnText.textContent = 'Login';
+                loginSpinner.classList.add('hidden');
+            }
+        }
+
+        // Show/Hide Sections
+        function showLogin() {
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('appSection').classList.add('hidden');
+        }
+
+        function showApp() {
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('appSection').classList.remove('hidden');
+            document.getElementById('userDisplay').textContent = username;
+            document.getElementById('userAvatar').textContent = username.charAt(0).toUpperCase();
+            document.getElementById('serverUrl').textContent = `Connected to ${API_BASE}`;
+        }
+
+        // Logout
+        function logout() {
+            sessionStorage.removeItem('authToken');
+            sessionStorage.removeItem('username');
+            authToken = null;
+            username = null;
+
+            // Close all WebSocket connections
+            activeWebSockets.forEach(ws => ws.close());
+            activeWebSockets.clear();
+            uploadedFiles.clear();
+
+            showLogin();
+            showToast('Logged out successfully', 'info');
+        }
+
+        // File Handling
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+
+            const files = Array.from(e.dataTransfer.files);
+            processFiles(files);
+        }
+
+        function handleFileSelect(e) {
+            const files = Array.from(e.target.files);
+            processFiles(files);
+            e.target.value = ''; // Reset input
+        }
+
+        function processFiles(files) {
+            files.forEach(file => {
+                if (file.size > 500 * 1024 * 1024) {
+                    showToast(`${file.name} exceeds 500MB limit`, 'error');
+                    return;
+                }
+                uploadFile(file);
+            });
+        }
+
+        // File Upload
+        async function uploadFile(file) {
+            const fileId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+            // Add to UI
+            addFileToList(fileId, file);
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('title', file.name.split('.')[0]);
+            formData.append('file', file);
+            formData.append('description', `Uploaded via web interface at ${new Date().toLocaleString()}`);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/documents/items/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Token ${authToken}`,
+                        'X-CSRFToken': csrfToken
+                    },
+                    credentials: 'include',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    const documentId = data.document_id || data.id;
+                    uploadedFiles.get(fileId).documentId = documentId;
+
+                    // Check if async upload
+                    if (data.is_async || data.upload_status === 'pending') {
+                        updateFileStatus(fileId, 'processing', 'Processing upload...');
+                        connectWebSocket(fileId, documentId);
+                    } else {
+                        updateFileStatus(fileId, 'completed', 'Upload completed');
+                        updateFileProgress(fileId, 100);
+                    }
+                } else {
+                    throw new Error(data.detail || data.file?.[0] || 'Upload failed');
+                }
+            } catch (error) {
+                updateFileStatus(fileId, 'failed', error.message);
+                showToast(`Failed to upload ${file.name}: ${error.message}`, 'error');
+            }
+        }
+
+        // WebSocket Connection
+        async function connectWebSocket(fileId, documentId) {
+            try {
+                // Get WebSocket URL
+                const response = await fetch(`${API_BASE}/api/documents/items/${documentId}/websocket-url/`, {
+                    headers: {
+                        'Authorization': `Token ${authToken}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to get WebSocket URL');
+                }
+
+                const config = await response.json();
+                // Add token to WebSocket URL for authentication
+                const wsUrl = new URL(config.websocket_url);
+                wsUrl.searchParams.set('token', authToken);
+                const ws = new WebSocket(wsUrl.toString());
+
+                activeWebSockets.set(fileId, ws);
+
+                ws.onopen = () => {
+                    console.log(`WebSocket connected for document ${documentId}`);
+                    ws.send(JSON.stringify({ type: 'get_status' }));
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(fileId, data);
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateFileStatus(fileId, 'failed', 'Connection error');
+                };
+
+                ws.onclose = () => {
+                    console.log(`WebSocket closed for document ${documentId}`);
+                    activeWebSockets.delete(fileId);
+                };
+
+            } catch (error) {
+                console.error('Failed to connect WebSocket:', error);
+                updateFileStatus(fileId, 'failed', 'Failed to connect for status updates');
+            }
+        }
+
+        // Handle WebSocket Messages
+        function handleWebSocketMessage(fileId, data) {
+            switch (data.type) {
+                case 'current_status':
+                case 'upload_status':
+                    handleStatusUpdate(fileId, data);
+                    break;
+                case 'upload_progress':
+                    handleProgressUpdate(fileId, data);
+                    break;
+                case 'upload_completed':
+                    handleUploadCompleted(fileId, data);
+                    break;
+                case 'upload_failed':
+                    handleUploadFailed(fileId, data);
+                    break;
+            }
+        }
+
+        function handleStatusUpdate(fileId, data) {
+            const progress = data.progress || {};
+            updateFileStatus(fileId, data.status, progress.step || 'Processing');
+            if (progress.progress) {
+                updateFileProgress(fileId, progress.progress);
+            }
+        }
+
+        function handleProgressUpdate(fileId, data) {
+            const progress = data.progress || {};
+            updateFileProgress(fileId, progress.progress || 0);
+            updateFileStatus(fileId, 'processing', progress.step || 'Processing');
+        }
+
+        function handleUploadCompleted(fileId, data) {
+            updateFileStatus(fileId, 'completed', data.message || 'Upload completed');
+            updateFileProgress(fileId, 100);
+            showToast('File uploaded successfully!', 'success');
+
+            // Close WebSocket
+            const ws = activeWebSockets.get(fileId);
+            if (ws) {
+                ws.close();
+                activeWebSockets.delete(fileId);
+            }
+        }
+
+        function handleUploadFailed(fileId, data) {
+            updateFileStatus(fileId, 'failed', data.error_message || 'Upload failed');
+            showToast(`Upload failed: ${data.error_message}`, 'error');
+
+            // Close WebSocket
+            const ws = activeWebSockets.get(fileId);
+            if (ws) {
+                ws.close();
+                activeWebSockets.delete(fileId);
+            }
+        }
+
+        // UI Updates
+        function addFileToList(fileId, file) {
+            const fileData = {
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                status: 'pending',
+                progress: 0,
+                statusText: 'Preparing upload...'
+            };
+
+            uploadedFiles.set(fileId, fileData);
+
+            const noFiles = document.getElementById('noFiles');
+            noFiles.style.display = 'none';
+
+            const filesList = document.getElementById('filesList');
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.id = fileId;
+
+            const extension = file.name.split('.').pop().toUpperCase().substr(0, 3);
+
+            fileItem.innerHTML = `
+                <div class="file-header">
+                    <div class="file-info">
+                        <div class="file-icon">${extension}</div>
+                        <div class="file-details">
+                            <h4>${file.name}</h4>
+                            <p>${formatFileSize(file.size)} • ${file.type || 'Unknown type'}</p>
+                        </div>
+                    </div>
+                    <div class="file-status status-pending">
+                        <div class="spinner"></div>
+                        <span>Preparing...</span>
+                    </div>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-info">
+                        <span class="progress-status">Preparing upload...</span>
+                        <span class="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            `;
+
+            filesList.insertBefore(fileItem, filesList.firstChild);
+        }
+
+        function updateFileStatus(fileId, status, statusText) {
+            const fileItem = document.getElementById(fileId);
+            if (!fileItem) return;
+
+            const fileData = uploadedFiles.get(fileId);
+            if (fileData) {
+                fileData.status = status;
+                fileData.statusText = statusText;
+            }
+
+            const statusElement = fileItem.querySelector('.file-status');
+            statusElement.className = `file-status status-${status}`;
+
+            let statusIcon = '';
+            switch (status) {
+                case 'pending':
+                    statusIcon = '<div class="spinner"></div>';
+                    break;
+                case 'processing':
+                    statusIcon = '<div class="spinner"></div>';
+                    break;
+                case 'completed':
+                    statusIcon = '✓';
+                    break;
+                case 'failed':
+                    statusIcon = '✗';
+                    break;
+            }
+
+            statusElement.innerHTML = `${statusIcon} <span>${statusText}</span>`;
+
+            const progressStatus = fileItem.querySelector('.progress-status');
+            progressStatus.textContent = statusText;
+        }
+
+        function updateFileProgress(fileId, progress) {
+            const fileItem = document.getElementById(fileId);
+            if (!fileItem) return;
+
+            const fileData = uploadedFiles.get(fileId);
+            if (fileData) {
+                fileData.progress = progress;
+            }
+
+            const progressFill = fileItem.querySelector('.progress-fill');
+            const progressPercent = fileItem.querySelector('.progress-percent');
+
+            progressFill.style.width = `${progress}%`;
+            progressPercent.textContent = `${Math.round(progress)}%`;
+        }
+
+        // Utility Functions
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function clearCompleted() {
+            const completedFiles = Array.from(uploadedFiles.entries())
+                .filter(([_, data]) => data.status === 'completed')
+                .map(([id, _]) => id);
+
+            completedFiles.forEach(fileId => {
+                const fileItem = document.getElementById(fileId);
+                if (fileItem) {
+                    fileItem.remove();
+                }
+                uploadedFiles.delete(fileId);
+            });
+
+            if (uploadedFiles.size === 0) {
+                document.getElementById('noFiles').style.display = 'block';
+            }
+
+            showToast(`Cleared ${completedFiles.length} completed uploads`, 'info');
+        }
+
+        // Toast Notifications
+        function showToast(message, type = 'info') {
+            const toastContainer = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+
+            let icon = '';
+            switch (type) {
+                case 'success':
+                    icon = '✓';
+                    break;
+                case 'error':
+                    icon = '✗';
+                    break;
+                case 'info':
+                    icon = 'ℹ';
+                    break;
+            }
+
+            toast.innerHTML = `
+                <span style="font-size: 1.5rem;">${icon}</span>
+                <div>
+                    <strong>${type.charAt(0).toUpperCase() + type.slice(1)}</strong>
+                    <div>${message}</div>
+                </div>
+            `;
+
+            toastContainer.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
