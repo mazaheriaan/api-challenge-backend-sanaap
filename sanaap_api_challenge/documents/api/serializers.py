@@ -1,3 +1,5 @@
+import uuid
+from datetime import datetime
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
@@ -488,18 +490,6 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
             if "file_path" in locals():
                 minio_client.delete_file(file_path)
 
-            if request:
-                Access.objects.create(
-                    document=None,
-                    user=request.user,
-                    action="upload",
-                    ip_address=get_client_ip(request),
-                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
-                    success=False,
-                    error_message=str(e),
-                    additional_info={"filename": file.name},
-                )
-
             if isinstance(e, ValidationError):
                 raise e
             raise ValidationError(
@@ -515,14 +505,21 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
             file_content = file.read()
             file.seek(0)
 
+            now = datetime.now(tz=timezone.get_current_timezone())
+            temp_uuid = uuid.uuid4().hex
+            temp_file_path = (
+                f"documents/temp/{now.year}/{now.month:02d}/"
+                f"{now.day:02d}/{request.user.id}/{temp_uuid}_{file.name}"
+            )
+
             # Create document record with pending status
             validated_data.update(
                 {
                     "file_name": file.name,
-                    "file_path": "",  # Will be set by async task
-                    "file_size": 0,  # Will be set by async task
+                    "file_path": temp_file_path,  # Temporary unique path
+                    "file_size": file.size,  # Use actual file size for better UX
                     "content_type": file.content_type or "application/octet-stream",
-                    "file_hash": "",  # Will be set by async task
+                    "file_hash": f"temp_{temp_uuid}",  # Temporary unique hash
                     "owner": request.user,
                     "created_by": request.user,
                     "upload_status": "pending",
@@ -555,23 +552,11 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
             return document
 
         except Exception as e:
-            if request:
-                Access.objects.create(
-                    document=None,
-                    user=request.user,
-                    action="upload",
-                    ip_address=get_client_ip(request),
-                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
-                    success=False,
-                    error_message=str(e),
-                    additional_info={"filename": file.name},
-                )
-
             if isinstance(e, ValidationError):
-                raise e
+                raise
             raise ValidationError(
                 _("Failed to create document: %(error)s") % {"error": str(e)},
-            )
+            ) from e
 
 
 class BulkShareSerializer(serializers.Serializer):

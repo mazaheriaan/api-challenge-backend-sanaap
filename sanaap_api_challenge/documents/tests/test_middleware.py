@@ -8,7 +8,7 @@ from django.http import HttpResponse
 from django.test import RequestFactory
 from django.test import TestCase
 
-from sanaap_api_challenge.documents.middleware import RequestLoggingMiddleware
+from sanaap_api_challenge.middleware import RequestLoggingMiddleware
 
 from .factories import UserFactory
 
@@ -57,7 +57,7 @@ class TestRequestLoggingMiddleware(TestCase):
         except Exception as e:
             self.fail(f"Middleware should handle POST requests: {e}")
 
-    @patch("sanaap_api_challenge.documents.middleware.logger")
+    @patch("sanaap_api_challenge.middleware.logger")
     def test_middleware_logs_request_info(self, mock_logger):
         user = UserFactory()
         request = self.factory.get("/api/documents/")
@@ -265,7 +265,7 @@ class TestMiddlewareIntegration(TestCase):
         self.assertEqual(result.status_code, 404)
         self.assertIn("X-Response-Time", result)
 
-    @patch("sanaap_api_challenge.documents.middleware.logger")
+    @patch("sanaap_api_challenge.middleware.logger")
     def test_middleware_logs_slow_requests(self, mock_logger):
         user = UserFactory()
         request = RequestFactory().get("/api/documents/")
@@ -280,7 +280,7 @@ class TestMiddlewareIntegration(TestCase):
         # Should log warning for slow request
         self.assertTrue(mock_logger.warning.called)
 
-    @patch("sanaap_api_challenge.documents.middleware.logger")
+    @patch("sanaap_api_challenge.middleware.logger")
     def test_middleware_logs_error_responses(self, mock_logger):
         user = UserFactory()
         request = RequestFactory().get("/api/documents/")

@@ -1,9 +1,12 @@
 import logging
 from io import BytesIO
 
+from asgiref.sync import async_to_sync
 from celery import shared_task
+from channels.layers import get_channel_layer
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from sanaap_api_challenge.documents.models import Access
@@ -16,6 +19,46 @@ from .api.utils import generate_unique_filename
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+def send_websocket_update(document_id, update_type, **kwargs):
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            logger.warning("Channel layer not configured, skipping WebSocket update")
+            return
+
+        group_name = f"upload_{document_id}"
+        message_data = {
+            "type": update_type,
+            "document_id": document_id,
+            "timestamp": timezone.now().isoformat(),
+            **kwargs,
+        }
+
+        try:
+            async_to_sync(channel_layer.group_send)(group_name, message_data)
+            logger.debug(
+                "Sent WebSocket update %s for document %s",
+                update_type,
+                document_id,
+            )
+        except Exception as send_error:
+            # Log WebSocket errors but don't re-raise them to prevent task failure
+            logger.error(
+                "WebSocket group_send failed for document %s (type: %s): %s",
+                document_id,
+                update_type,
+                str(send_error),
+            )
+
+    except Exception as e:
+        logger.error(
+            "WebSocket update failed for document %s (type: %s): %s",
+            document_id,
+            update_type,
+            str(e),
+        )
 
 
 @shared_task(bind=True)
@@ -50,6 +93,12 @@ def process_document_upload(
             "processing",
             progress={"step": "validating", "progress": 10},
         )
+        send_websocket_update(
+            document_id,
+            "upload_status_update",
+            status="processing",
+            progress={"step": "validating", "progress": 10},
+        )
 
         # Recreate file object for validation
         file_content = file_data["content"]
@@ -67,6 +116,12 @@ def process_document_upload(
         if not is_valid:
             error_message = "; ".join(errors)
             document.update_upload_status("failed", error_message=error_message)
+            send_websocket_update(
+                document_id,
+                "upload_failed",
+                status="failed",
+                error_message=error_message,
+            )
 
             # Log failed upload
             Access.objects.create(
@@ -90,6 +145,11 @@ def process_document_upload(
             "processing",
             progress={"step": "calculating_hash", "progress": 30},
         )
+        send_websocket_update(
+            document_id,
+            "upload_progress_update",
+            progress={"step": "calculating_hash", "progress": 30},
+        )
 
         # Calculate file hash
         file_hash = calculate_file_hash(file_content)
@@ -103,6 +163,12 @@ def process_document_upload(
                 "A document with identical content already exists: %(title)s",
             ) % {"title": existing.title}
             document.update_upload_status("failed", error_message=error_message)
+            send_websocket_update(
+                document_id,
+                "upload_failed",
+                status="failed",
+                error_message=error_message,
+            )
 
             # Log failed upload
             Access.objects.create(
@@ -124,6 +190,11 @@ def process_document_upload(
         # Update progress
         document.update_upload_status(
             "processing",
+            progress={"step": "uploading_to_storage", "progress": 50},
+        )
+        send_websocket_update(
+            document_id,
+            "upload_progress_update",
             progress={"step": "uploading_to_storage", "progress": 50},
         )
 
@@ -150,6 +221,12 @@ def process_document_upload(
         if not success:
             error_message = _("Failed to upload file to storage")
             document.update_upload_status("failed", error_message=error_message)
+            send_websocket_update(
+                document_id,
+                "upload_failed",
+                status="failed",
+                error_message=error_message,
+            )
 
             # Log failed upload
             Access.objects.create(
@@ -173,6 +250,11 @@ def process_document_upload(
             "processing",
             progress={"step": "finalizing", "progress": 90},
         )
+        send_websocket_update(
+            document_id,
+            "upload_progress_update",
+            progress={"step": "finalizing", "progress": 90},
+        )
 
         # Update document with final information
         document.file_path = file_path
@@ -193,6 +275,14 @@ def process_document_upload(
                 "upload_error_message",
                 "modified",
             ],
+        )
+
+        # Send WebSocket completion update
+        send_websocket_update(
+            document_id,
+            "upload_completed",
+            status="completed",
+            message="Upload completed successfully",
         )
 
         # Log successful upload
@@ -226,6 +316,13 @@ def process_document_upload(
         try:
             document = Document.objects.get(id=document_id)
             document.update_upload_status("failed", error_message=error_message)
+            # Send WebSocket failure update
+            send_websocket_update(
+                document_id,
+                "upload_failed",
+                status="failed",
+                error_message=error_message,
+            )
         except Document.DoesNotExist:
             pass
         return {"success": False, "error": error_message, "document_id": document_id}
@@ -237,6 +334,12 @@ def process_document_upload(
         try:
             document = Document.objects.get(id=document_id)
             document.update_upload_status("failed", error_message=error_message)
+            send_websocket_update(
+                document_id,
+                "upload_failed",
+                status="failed",
+                error_message=error_message,
+            )
 
             # Clean up uploaded file if it exists
             if hasattr(document, "file_path") and document.file_path:

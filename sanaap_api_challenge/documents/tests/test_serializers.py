@@ -1,8 +1,14 @@
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import as_completed
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.test import TransactionTestCase
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIRequestFactory
 
 from sanaap_api_challenge.documents.api.serializers import AccessLogSerializer
@@ -130,7 +136,7 @@ class TestDocumentCreateSerializer(TestCase):
         mock_minio.file_exists.return_value = True
 
         file = SimpleUploadedFile(
-            "test.txt", b"test content", content_type="text/plain"
+            "test.txt", b"test content", content_type="text/plain",
         )
 
         # Create a request with user
@@ -149,7 +155,7 @@ class TestDocumentCreateSerializer(TestCase):
 
     def test_create_document_invalid_file_type(self):
         file = SimpleUploadedFile(
-            "test.exe", b"test content", content_type="application/octet-stream"
+            "test.exe", b"test content", content_type="application/octet-stream",
         )
 
         request = self.factory.post("/")
@@ -293,3 +299,315 @@ class TestAccessLogSerializer(TestCase):
                 field.read_only,
                 f"Field {field_name} should be read-only",
             )
+
+
+class TestAsyncDocumentUpload(TransactionTestCase):
+    """Test cases for async document upload functionality."""
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.factory = APIRequestFactory()
+
+        # Override MAX_FILE_SIZES for testing to allow larger files
+        self.original_max_file_sizes = getattr(settings, "MAX_FILE_SIZES", {})
+        settings.MAX_FILE_SIZES = {
+            "document": 200 * 1024 * 1024,  # 200MB
+            "image": 50 * 1024 * 1024,      # 50MB
+            "audio": 300 * 1024 * 1024,     # 300MB
+            "video": 500 * 1024 * 1024,     # 500MB
+            "archive": 300 * 1024 * 1024,   # 300MB
+            "code": 50 * 1024 * 1024,       # 50MB
+            "default": 200 * 1024 * 1024,   # 200MB
+        }
+
+    def tearDown(self):
+        # Restore original settings
+        settings.MAX_FILE_SIZES = self.original_max_file_sizes
+
+    @patch("sanaap_api_challenge.documents.tasks.process_document_upload.delay")
+    @patch("sanaap_api_challenge.utils.minio_client.minio_client")
+    def test_async_upload_creates_unique_file_paths(self, mock_minio, mock_task):
+        """Test that multiple async uploads generate unique temporary file paths."""
+        mock_minio.upload_file.return_value = True
+        mock_minio.file_exists.return_value = True
+        mock_task.return_value.id = "test-task-id"
+
+        # Create a large file to trigger async upload (> 50MB)
+        large_content = b"x" * (60 * 1024 * 1024)  # 60MB
+
+        file_paths = []
+        documents = []
+
+        # Create multiple files with same name but different content
+        for i in range(5):
+            file = SimpleUploadedFile(
+                "test_file.txt",
+                large_content,
+                content_type="text/plain",
+            )
+
+            request = self.factory.post("/")
+            request.user = self.user
+
+            serializer = DocumentCreateSerializer(
+                data={
+                    "title": f"Test Doc {i}",
+                    "file": file,
+                    "description": "Test async upload",
+                },
+                context={"request": request},
+            )
+
+            self.assertTrue(serializer.is_valid(), f"Validation failed: {serializer.errors}")
+            document = serializer.save()
+
+            documents.append(document)
+            file_paths.append(document.file_path)
+
+        # Verify all file paths are unique
+        self.assertEqual(len(set(file_paths)), len(file_paths),
+                        "File paths should be unique")
+
+        # Verify all documents have pending status
+        for document in documents:
+            self.assertEqual(document.upload_status, "pending")
+            self.assertIsNotNone(document.upload_task_id)
+
+        # Verify file paths follow the expected pattern
+        for file_path in file_paths:
+            self.assertTrue(file_path.startswith("documents/temp/"))
+            self.assertIn(str(self.user.id), file_path)
+            self.assertTrue(file_path.endswith("test_file.txt"))
+
+    @patch("sanaap_api_challenge.documents.tasks.process_document_upload.delay")
+    @patch("sanaap_api_challenge.utils.minio_client.minio_client")
+    def test_concurrent_async_uploads(self, mock_minio, mock_task):
+        """Test multiple concurrent async uploads don't cause database conflicts."""
+        mock_minio.upload_file.return_value = True
+        mock_minio.file_exists.return_value = True
+
+        # Create unique task IDs for each upload
+        task_ids = [f"task-{i}" for i in range(10)]
+        mock_task.side_effect = [MagicMock(id=task_id) for task_id in task_ids]
+
+        # Create large content to trigger async processing
+        large_content = b"x" * (60 * 1024 * 1024)  # 60MB
+
+        def create_upload(thread_id):
+            """Create a single async upload in a thread."""
+            file = SimpleUploadedFile(
+                f"concurrent_test_{thread_id}.txt",
+                large_content,
+                content_type="text/plain",
+            )
+
+            request = self.factory.post("/")
+            request.user = self.user
+
+            serializer = DocumentCreateSerializer(
+                data={
+                    "title": f"Concurrent Doc {thread_id}",
+                    "file": file,
+                    "description": f"Concurrent test {thread_id}",
+                },
+                context={"request": request},
+            )
+
+            if serializer.is_valid():
+                document = serializer.save()
+                return {
+                    "success": True,
+                    "document_id": document.id,
+                    "file_path": document.file_path,
+                    "task_id": document.upload_task_id,
+                    "thread_id": thread_id,
+                }
+            return {
+                "success": False,
+                "errors": serializer.errors,
+                "thread_id": thread_id,
+            }
+
+        # Run concurrent uploads
+        results = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(create_upload, i) for i in range(10)]
+
+            for future in as_completed(futures):
+                result = future.result()
+                results.append(result)
+
+        # Verify all uploads succeeded
+        successful_results = [r for r in results if r["success"]]
+        failed_results = [r for r in results if not r["success"]]
+
+        self.assertEqual(len(successful_results), 10,
+                        f"Expected 10 successful uploads, got {len(successful_results)}. "
+                        f"Failed: {failed_results}")
+
+        # Verify all file paths are unique
+        file_paths = [r["file_path"] for r in successful_results]
+        self.assertEqual(len(set(file_paths)), len(file_paths),
+                        "All file paths should be unique")
+
+        # Verify all task IDs are assigned
+        task_ids = [r["task_id"] for r in successful_results]
+        self.assertTrue(all(task_id for task_id in task_ids),
+                       "All documents should have task IDs")
+
+    @patch("sanaap_api_challenge.documents.tasks.process_document_upload.delay")
+    @patch("sanaap_api_challenge.utils.minio_client.minio_client")
+    def test_async_upload_error_handling(self, mock_minio, mock_task):
+        """Test error handling in async upload creation."""
+        mock_minio.upload_file.return_value = True
+        mock_minio.file_exists.return_value = True
+
+        # Mock task to raise an exception
+        mock_task.side_effect = Exception("Celery task creation failed")
+
+        large_content = b"x" * (60 * 1024 * 1024)  # 60MB
+        file = SimpleUploadedFile(
+            "error_test.txt",
+            large_content,
+            content_type="text/plain",
+        )
+
+        request = self.factory.post("/")
+        request.user = self.user
+
+        serializer = DocumentCreateSerializer(
+            data={
+                "title": "Error Test Doc",
+                "file": file,
+                "description": "Test error handling",
+            },
+            context={"request": request},
+        )
+
+        # Should still validate successfully
+        self.assertTrue(serializer.is_valid())
+
+        # But save should raise ValidationError due to task creation failure
+        with self.assertRaises(ValidationError) as cm:
+            serializer.save()
+
+        self.assertIn("Failed to create document", str(cm.exception))
+
+    @patch("sanaap_api_challenge.documents.tasks.process_document_upload.delay")
+    @patch("sanaap_api_challenge.utils.minio_client.minio_client")
+    def test_async_upload_file_path_uniqueness_stress_test(self, mock_minio, mock_task):
+        """Stress test for file path uniqueness with many concurrent uploads."""
+        mock_minio.upload_file.return_value = True
+        mock_minio.file_exists.return_value = True
+
+        # Create many task IDs
+        task_ids = [f"stress-task-{i}" for i in range(50)]
+        mock_task.side_effect = [MagicMock(id=task_id) for task_id in task_ids]
+
+        large_content = b"x" * (60 * 1024 * 1024)  # 60MB
+
+        def stress_upload(upload_id):
+            """Perform a single upload."""
+            # Use same filename to stress test uniqueness
+            file = SimpleUploadedFile(
+                "stress_test.txt",
+                large_content,
+                content_type="text/plain",
+            )
+
+            request = self.factory.post("/")
+            request.user = self.user
+
+            serializer = DocumentCreateSerializer(
+                data={
+                    "title": f"Stress Test {upload_id}",
+                    "file": file,
+                    "description": "Stress test upload",
+                },
+                context={"request": request},
+            )
+
+            if serializer.is_valid():
+                try:
+                    document = serializer.save()
+                    return {
+                        "success": True,
+                        "file_path": document.file_path,
+                        "upload_id": upload_id,
+                    }
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "upload_id": upload_id,
+                    }
+            else:
+                return {
+                    "success": False,
+                    "error": serializer.errors,
+                    "upload_id": upload_id,
+                }
+
+        # Run stress test with high concurrency
+        results = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(stress_upload, i) for i in range(50)]
+
+            for future in as_completed(futures):
+                result = future.result()
+                results.append(result)
+
+        # Analyze results
+        successful_results = [r for r in results if r["success"]]
+        failed_results = [r for r in results if not r["success"]]
+
+        # Log any failures for debugging
+        if failed_results:
+            for failure in failed_results[:5]:  # Show first 5 failures
+                print(f"Upload {failure['upload_id']} failed: {failure['error']}")
+
+        # Should have high success rate (allow some failures due to concurrency)
+        success_rate = len(successful_results) / len(results)
+        self.assertGreaterEqual(success_rate, 0.9,
+                               f"Success rate too low: {success_rate:.2%}")
+
+        # All successful uploads should have unique file paths
+        if successful_results:
+            file_paths = [r["file_path"] for r in successful_results]
+            unique_paths = set(file_paths)
+            self.assertEqual(len(unique_paths), len(file_paths),
+                           f"Expected {len(file_paths)} unique paths, got {len(unique_paths)}")
+
+    def test_sync_upload_still_works(self):
+        """Test that small files still use synchronous upload."""
+        # Create a small file (< async threshold)
+        small_content = b"x" * 1024  # 1KB
+        file = SimpleUploadedFile(
+            "small_test.txt",
+            small_content,
+            content_type="text/plain",
+        )
+
+        request = self.factory.post("/")
+        request.user = self.user
+
+        with patch("sanaap_api_challenge.utils.minio_client.minio_client") as mock_minio:
+            mock_minio.upload_file.return_value = True
+            mock_minio.file_exists.return_value = True
+
+            serializer = DocumentCreateSerializer(
+                data={
+                    "title": "Small Test Doc",
+                    "file": file,
+                    "description": "Test sync upload",
+                },
+                context={"request": request},
+            )
+
+            self.assertTrue(serializer.is_valid())
+            document = serializer.save()
+
+            # Should have completed status (not pending)
+            self.assertEqual(document.upload_status, "completed")
+            # Should not have task ID for sync uploads
+            self.assertIsNone(document.upload_task_id)

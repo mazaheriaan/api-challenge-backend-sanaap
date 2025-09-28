@@ -440,6 +440,66 @@ class DocumentViewSet(viewsets.ModelViewSet):
         )
         return Response(serializer.data)
 
+    @action(detail=True, methods=["get"], url_path="websocket-url")
+    @extend_schema(
+        operation_id="documents_websocket_url",
+        summary="Get WebSocket URL for upload status",
+        description="Get the WebSocket URL for real-time upload status updates",
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "websocket_url": {
+                        "type": "string",
+                        "description": "WebSocket URL for upload status",
+                    },
+                    "document_id": {"type": "integer", "description": "Document ID"},
+                    "config": {
+                        "type": "object",
+                        "description": "Connection configuration",
+                        "properties": {
+                            "reconnect": {"type": "boolean"},
+                            "max_reconnect_attempts": {"type": "integer"},
+                            "reconnect_delay": {"type": "integer"},
+                            "ping_interval": {"type": "integer"},
+                        },
+                    },
+                },
+            },
+        },
+    )
+    def websocket_url(self, request, pk=None):
+        document = self.get_object()
+
+        if request.user != document.owner:
+            return Response(
+                {
+                    "detail": _(
+                        "You don't have permission to track upload status for this document.",
+                    ),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        from sanaap_api_challenge.documents.websocket_utils import UploadStatusManager
+
+        config = UploadStatusManager.get_connection_config(document.id, request)
+
+        return Response(
+            {
+                "websocket_url": config["url"],
+                "document_id": document.id,
+                "config": {
+                    "reconnect": config["reconnect"],
+                    "max_reconnect_attempts": config["max_reconnect_attempts"],
+                    "reconnect_delay": config["reconnect_delay"],
+                    "ping_interval": config["ping_interval"],
+                },
+                "message_types": UploadStatusManager.get_message_handlers(),
+                "client_messages": UploadStatusManager.get_client_messages(),
+            },
+        )
+
 
 class ShareViewSet(viewsets.ModelViewSet):
     queryset = Share.objects.select_related("document", "shared_with", "shared_by")
