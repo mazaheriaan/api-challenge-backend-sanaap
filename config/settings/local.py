@@ -87,3 +87,46 @@ MAX_FILE_SIZES = {
     "code": 50 * 1024 * 1024,  # 50MB
     "default": 200 * 1024 * 1024,  # 200MB (reduced from 500MB)
 }
+
+# CORS Settings for Local Development
+# ------------------------------------------------------------------------------
+# Allow all origins in development (for testing with local HTML files)
+CORS_ALLOW_ALL_ORIGINS = True
+
+# OR if you want to be more specific:
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:3000",
+#     "http://127.0.0.1:3000",
+#     "http://localhost:8000",
+#     "http://127.0.0.1:8000",
+#     "null",  # For file:// protocol
+# ]
+
+# Allow credentials to be included
+CORS_ALLOW_CREDENTIALS = True
+
+# Allow all headers
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+# Allow all methods
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+# Disable CSRF for local development if needed (uncomment to disable)
+# CSRF_TRUSTED_ORIGINS = ["http://localhost:*", "http://127.0.0.1:*"]
