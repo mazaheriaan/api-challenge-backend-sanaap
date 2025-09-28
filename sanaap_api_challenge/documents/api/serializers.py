@@ -215,9 +215,16 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
     file_extension = serializers.SerializerMethodField()
     download_url = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    upload_status_display = serializers.CharField(
+        source="get_upload_status_display",
+        read_only=True,
+    )
     can_edit = serializers.SerializerMethodField()
     can_share = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
+    is_upload_completed = serializers.SerializerMethodField()
+    is_upload_failed = serializers.SerializerMethodField()
+    is_upload_in_progress = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -240,6 +247,14 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             "status",
             "status_display",
             "status_changed",
+            "upload_status",
+            "upload_status_display",
+            "upload_task_id",
+            "upload_progress",
+            "upload_error_message",
+            "is_upload_completed",
+            "is_upload_failed",
+            "is_upload_in_progress",
             "is_public",
             "download_count",
             "last_accessed",
@@ -283,7 +298,7 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if request:
             return request.build_absolute_uri(
-                f"/api/documents/items/{obj.id}/download/"
+                f"/api/documents/items/{obj.id}/download/",
             )
         return None
 
@@ -313,6 +328,18 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             return False
         return request.user == obj.owner or request.user.has_perm("delete_doc", obj)
 
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_upload_completed(self, obj):
+        return obj.is_upload_completed()
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_upload_failed(self, obj):
+        return obj.is_upload_failed()
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_upload_in_progress(self, obj):
+        return obj.is_upload_in_progress()
+
     def update(self, instance, validated_data):
         instance = super().update(instance, validated_data)
 
@@ -325,6 +352,12 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
 
 class DocumentCreateSerializer(serializers.ModelSerializer):
     file = serializers.FileField(write_only=True)
+    force_async = serializers.BooleanField(
+        write_only=True,
+        required=False,
+        default=False,
+        help_text=_("Force async processing even for small files"),
+    )
 
     class Meta:
         model = Document
@@ -335,10 +368,35 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
             "file",
             "status",
             "is_public",
+            "force_async",
         ]
         read_only_fields = ["id"]
 
     def validate_file(self, file):
+        from django.conf import settings
+
+        from sanaap_api_challenge.documents.utils.validators import get_file_category
+
+        # SECURITY: Check file size FIRST before any processing to prevent DoS attacks
+        file_category = get_file_category(file.name)
+        max_file_sizes = getattr(settings, "MAX_FILE_SIZES", {})
+        max_size = max_file_sizes.get(
+            file_category,
+            max_file_sizes.get("default", 100 * 1024 * 1024),
+        )
+
+        if file.size > max_size:
+            raise ValidationError(
+                _(
+                    "File too large. Maximum file size for %(category)s files is %(max_size)s MB",
+                )
+                % {
+                    "category": file_category,
+                    "max_size": max_size // (1024 * 1024),
+                },
+            )
+
+        # Additional validation after size check
         is_valid, errors = validate_uploaded_file(file)
 
         if not is_valid:
@@ -348,10 +406,22 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
         return file
 
     def create(self, validated_data):
-        """Create document with file upload to MinIO."""
+        """Create document with async or sync file upload based on file size."""
         file = validated_data.pop("file")
+        force_async = validated_data.pop("force_async", False)
         request = self.context.get("request")
 
+        # Determine if we should use async processing
+        # Files larger than 50MB or when force_async is True (reduced for memory safety)
+        async_threshold = 50 * 1024 * 1024  # 50MB
+        use_async = force_async or file.size > async_threshold
+
+        if use_async:
+            return self._create_async(file, validated_data, request)
+        return self._create_sync(file, validated_data, request)
+
+    def _create_sync(self, file, validated_data, request):
+        """Create document synchronously (for small files)."""
         try:
             file_content = file.read()
             file.seek(0)
@@ -396,6 +466,7 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
                     "file_hash": file_hash,
                     "owner": request.user,
                     "created_by": request.user,
+                    "upload_status": "completed",  # Mark as completed for sync uploads
                 },
             )
 
@@ -417,6 +488,73 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
             if "file_path" in locals():
                 minio_client.delete_file(file_path)
 
+            if request:
+                Access.objects.create(
+                    document=None,
+                    user=request.user,
+                    action="upload",
+                    ip_address=get_client_ip(request),
+                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
+                    success=False,
+                    error_message=str(e),
+                    additional_info={"filename": file.name},
+                )
+
+            if isinstance(e, ValidationError):
+                raise e
+            raise ValidationError(
+                _("Failed to create document: %(error)s") % {"error": str(e)},
+            )
+
+    def _create_async(self, file, validated_data, request):
+        """Create document asynchronously (for large files)."""
+        from sanaap_api_challenge.documents.tasks import process_document_upload
+
+        try:
+            # Read file content for async processing
+            file_content = file.read()
+            file.seek(0)
+
+            # Create document record with pending status
+            validated_data.update(
+                {
+                    "file_name": file.name,
+                    "file_path": "",  # Will be set by async task
+                    "file_size": 0,  # Will be set by async task
+                    "content_type": file.content_type or "application/octet-stream",
+                    "file_hash": "",  # Will be set by async task
+                    "owner": request.user,
+                    "created_by": request.user,
+                    "upload_status": "pending",
+                    "upload_progress": {"step": "queued", "progress": 0},
+                },
+            )
+
+            document = super().create(validated_data)
+
+            # Prepare file data for Celery task
+            file_data = {
+                "content": file_content,
+                "name": file.name,
+                "content_type": file.content_type or "application/octet-stream",
+            }
+
+            # Launch async task
+            task = process_document_upload.delay(
+                document_id=document.id,
+                file_data=file_data,
+                user_id=request.user.id,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+
+            # Update document with task ID
+            document.upload_task_id = task.id
+            document.save(update_fields=["upload_task_id"])
+
+            return document
+
+        except Exception as e:
             if request:
                 Access.objects.create(
                     document=None,
@@ -467,3 +605,96 @@ class BulkShareSerializer(serializers.Serializer):
             )
 
         return value
+
+
+class DocumentUploadResponseSerializer(serializers.Serializer):
+    """Serializer for async upload response"""
+
+    document_id = serializers.IntegerField(help_text=_("Document ID"))
+    upload_task_id = serializers.CharField(
+        help_text=_("Celery task ID for tracking upload progress"),
+    )
+    upload_status = serializers.CharField(help_text=_("Current upload status"))
+    upload_status_url = serializers.CharField(help_text=_("URL to check upload status"))
+    is_async = serializers.BooleanField(
+        default=True,
+        help_text=_("Whether upload is processed asynchronously"),
+    )
+
+
+class DocumentUploadStatusSerializer(serializers.ModelSerializer):
+    """Serializer for upload status information"""
+
+    upload_status_display = serializers.CharField(
+        source="get_upload_status_display",
+        read_only=True,
+    )
+    is_upload_completed = serializers.SerializerMethodField()
+    is_upload_failed = serializers.SerializerMethodField()
+    is_upload_in_progress = serializers.SerializerMethodField()
+    estimated_completion = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Document
+        fields = [
+            "id",
+            "title",
+            "upload_status",
+            "upload_status_display",
+            "upload_task_id",
+            "upload_progress",
+            "upload_error_message",
+            "is_upload_completed",
+            "is_upload_failed",
+            "is_upload_in_progress",
+            "estimated_completion",
+            "created",
+            "modified",
+        ]
+        read_only_fields = [
+            "id",
+            "upload_status",
+            "upload_task_id",
+            "upload_progress",
+            "upload_error_message",
+            "created",
+            "modified",
+        ]
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_upload_completed(self, obj):
+        return obj.is_upload_completed()
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_upload_failed(self, obj):
+        return obj.is_upload_failed()
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_upload_in_progress(self, obj):
+        return obj.is_upload_in_progress()
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_estimated_completion(self, obj):
+        """Estimate completion time based on progress"""
+        if not obj.is_upload_in_progress():
+            return None
+
+        progress_info = obj.upload_progress or {}
+        progress = progress_info.get("progress", 0)
+
+        if progress == 0:
+            return "Calculating..."
+
+        # Rough estimation based on typical upload times
+        # This is a simple estimation - in production you might track actual times
+        import math
+
+        from django.utils import timezone
+
+        elapsed = (timezone.now() - obj.modified).total_seconds()
+        if elapsed > 0 and progress > 0:
+            estimated_total = (elapsed / progress) * 100
+            remaining = max(0, estimated_total - elapsed)
+            return f"{math.ceil(remaining)} seconds"
+
+        return "Calculating..."

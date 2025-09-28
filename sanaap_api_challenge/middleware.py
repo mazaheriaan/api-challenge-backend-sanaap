@@ -8,8 +8,6 @@ from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.deprecation import MiddlewareMixin
 
-# Translate
-
 logger = logging.getLogger(__name__)
 User = get_user_model()
 

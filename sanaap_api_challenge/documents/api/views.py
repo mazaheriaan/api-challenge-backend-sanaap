@@ -31,6 +31,8 @@ from .serializers import BulkShareSerializer
 from .serializers import DocumentCreateSerializer
 from .serializers import DocumentDetailSerializer
 from .serializers import DocumentListSerializer
+from .serializers import DocumentUploadResponseSerializer
+from .serializers import DocumentUploadStatusSerializer
 from .serializers import ShareSerializer
 from .utils import get_client_ip
 
@@ -89,13 +91,44 @@ class DocumentViewSet(viewsets.ModelViewSet):
         summary="Upload a new document",
         description=(
             "Create a new document by uploading a file. "
+            "Files larger than 50MB will be processed asynchronously. "
+            "Maximum file size varies by type (200MB for documents). "
             "The file will be stored in MinIO object storage."
         ),
         request=DocumentCreateSerializer,
-        responses={201: DocumentDetailSerializer},
+        responses={
+            201: DocumentDetailSerializer,
+            202: DocumentUploadResponseSerializer,
+        },
     )
     def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        document = serializer.save()
+
+        if document.upload_status == "pending":
+            # Async upload - return upload tracking info
+            response_data = {
+                "document_id": document.id,
+                "upload_task_id": document.upload_task_id,
+                "upload_status": document.upload_status,
+                "upload_status_url": request.build_absolute_uri(
+                    f"/api/documents/items/{document.id}/upload-status/",
+                ),
+                "is_async": True,
+            }
+            return Response(
+                DocumentUploadResponseSerializer(response_data).data,
+                status=status.HTTP_202_ACCEPTED,
+            )
+        # Sync upload - return document details
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            DocumentDetailSerializer(document, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -379,6 +412,32 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
 
         serializer = AccessLogSerializer(logs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="upload-status")
+    @extend_schema(
+        operation_id="documents_upload_status",
+        summary="Get upload status",
+        description="Get the current upload status and progress for a document",
+        responses={200: DocumentUploadStatusSerializer},
+    )
+    def upload_status(self, request, pk=None):
+        document = self.get_object()
+
+        if request.user != document.owner:
+            return Response(
+                {
+                    "detail": _(
+                        "You don't have permission to view upload status for this document.",
+                    ),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = DocumentUploadStatusSerializer(
+            document,
+            context={"request": request},
+        )
         return Response(serializer.data)
 
 

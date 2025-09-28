@@ -25,6 +25,13 @@ class Document(TimeStampedModel, StatusModel):
         ("deleted", "Deleted"),
     )
 
+    UPLOAD_STATUS = Choices(
+        ("pending", "Upload Pending"),
+        ("processing", "Processing Upload"),
+        ("completed", "Upload Completed"),
+        ("failed", "Upload Failed"),
+    )
+
     # File information
     title = models.CharField(max_length=255, help_text=_("Document title"))
     description = models.TextField(blank=True, help_text=_("Document description"))
@@ -40,6 +47,28 @@ class Document(TimeStampedModel, StatusModel):
         max_length=64,
         unique=True,
         help_text=_("SHA-256 hash for deduplication and integrity"),
+    )
+
+    # Upload tracking for async processing
+    upload_status = StatusField(
+        choices_name="UPLOAD_STATUS",
+        default="completed",
+        help_text=_("Current status of file upload processing"),
+    )
+    upload_task_id = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=_("Celery task ID for async upload processing"),
+    )
+    upload_progress = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=_("Upload progress information and metadata"),
+    )
+    upload_error_message = models.TextField(
+        blank=True,
+        help_text=_("Error message if upload failed"),
     )
 
     # Ownership and access
@@ -98,6 +127,8 @@ class Document(TimeStampedModel, StatusModel):
             models.Index(fields=["content_type"]),
             models.Index(fields=["-modified"]),
             models.Index(fields=["status"]),
+            models.Index(fields=["upload_status", "-created"]),
+            models.Index(fields=["upload_task_id"]),
         ]
 
     def __str__(self):
@@ -117,6 +148,35 @@ class Document(TimeStampedModel, StatusModel):
         self.last_accessed = timezone.now()
         self.save(update_fields=["download_count", "last_accessed"])
 
+    def update_upload_status(self, status, progress=None, error_message=""):
+        """Update upload status and related fields"""
+        self.upload_status = status
+        if progress is not None:
+            self.upload_progress = progress
+        if error_message:
+            self.upload_error_message = error_message
+        elif status == "completed":
+            self.upload_error_message = ""
+
+        update_fields = [
+            "upload_status",
+            "upload_progress",
+            "upload_error_message",
+            "modified",
+        ]
+        self.save(update_fields=update_fields)
+
+    def is_upload_completed(self):
+        """Check if upload is completed"""
+        return self.upload_status == "completed"
+
+    def is_upload_failed(self):
+        """Check if upload failed"""
+        return self.upload_status == "failed"
+
+    def is_upload_in_progress(self):
+        """Check if upload is in progress"""
+        return self.upload_status in ["pending", "processing"]
 
 
 class Share(TimeStampedModel):

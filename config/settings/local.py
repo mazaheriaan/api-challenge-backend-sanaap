@@ -63,27 +63,27 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 # Document Upload Settings - Development
 # ------------------------------------------------------------------------------
-# Larger file sizes for development (500MB)
-FILE_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024  # 500MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024  # 500MB
+# SECURITY: Strict limits to prevent DoS attacks even in development
+# Files larger than this will be rejected by Django before reaching our app
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB in memory max
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 1024  # 1GB total request size max
 
 # Allow more fields for development (increased to handle extreme multipart uploads)
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000
 
-# Use temporary files for large uploads in development
 FILE_UPLOAD_HANDLERS = [
+    "sanaap_api_challenge.documents.utils.upload_handlers.SecureFileUploadHandler",
+    "sanaap_api_challenge.documents.utils.upload_handlers.MemoryEfficientUploadHandler",
     "django.core.files.uploadhandler.TemporaryFileUploadHandler",
-    "django.core.files.uploadhandler.MemoryFileUploadHandler",
 ]
 
-# Override file size limits for development
+# Application-level file size limits (enforced in serializers)
 MAX_FILE_SIZES = {
-    # More generous limits for development
     "document": 200 * 1024 * 1024,  # 200MB
     "image": 50 * 1024 * 1024,  # 50MB
     "audio": 300 * 1024 * 1024,  # 300MB
-    "video": 1024 * 1024 * 1024,  # 1GB
-    "archive": 500 * 1024 * 1024,  # 500MB
+    "video": 500 * 1024 * 1024,  # 500MB (reduced from 1GB for safety)
+    "archive": 300 * 1024 * 1024,  # 300MB
     "code": 50 * 1024 * 1024,  # 50MB
-    "default": 500 * 1024 * 1024,  # 500MB
+    "default": 200 * 1024 * 1024,  # 200MB (reduced from 500MB)
 }

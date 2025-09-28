@@ -138,6 +138,8 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 2000
 
 # Use temporary files for all uploads in production for security
 FILE_UPLOAD_HANDLERS = [
+    "sanaap_api_challenge.documents.utils.upload_handlers.SecureFileUploadHandler",
+    "sanaap_api_challenge.documents.utils.upload_handlers.MemoryEfficientUploadHandler",
     "django.core.files.uploadhandler.TemporaryFileUploadHandler",
 ]
 
