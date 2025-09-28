@@ -165,6 +165,8 @@ requires-python = "==3.13.*"
 dependencies = [
     "argon2-cffi==25.1.0",
     "celery==5.5.3",
+    "channels-redis>=4.3.0",
+    "channels[daphne]>=4.3.1",
     "django==5.2.6",
     "django-cors-headers==4.9.0",
     "django-environ==0.12.0",

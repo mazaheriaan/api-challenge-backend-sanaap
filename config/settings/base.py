@@ -34,10 +34,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 ROOT_URLCONF = "config.urls"
 # https://docs.djangoproject.com/en/dev/ref/settings/#wsgi-application
 WSGI_APPLICATION = "config.wsgi.application"
+# https://channels.readthedocs.io/en/latest/deploying.html#setting-up-asgi
+ASGI_APPLICATION = "config.asgi.application"
 
 # APPS
 # ------------------------------------------------------------------------------
 DJANGO_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -51,6 +54,7 @@ THIRD_PARTY_APPS = [
     "corsheaders",
     "drf_spectacular",
     "guardian",
+    "channels",
 ]
 
 LOCAL_APPS = ["sanaap_api_challenge.documents"]
@@ -208,6 +212,18 @@ CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#worker-hijack-root-logger
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+
+# Channels
+# ------------------------------------------------------------------------------
+# https://channels.readthedocs.io/en/latest/topics/channel_layers.html#redis-channel-layer
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+        },
+    },
+}
 # django-guardian
 # ------------------------------------------------------------------------------
 # https://django-guardian.readthedocs.io/en/stable/configuration.html
